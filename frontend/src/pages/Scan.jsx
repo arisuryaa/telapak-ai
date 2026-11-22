@@ -5,13 +5,13 @@ import ProcessingPanel from "../components/ProcessingPanel.jsx";
 import { JudulHalaman, Pesan } from "../components/ui.jsx";
 import { ambilPengaturan, scan } from "../lib/api.js";
 
-// Used until the server answers, and if it cannot be reached. These are the Gabor values the app started with.
-const CADANGAN = { metode: "gabor", metode_nama: "Gabor", batas_default: 0.38, batas_min: 0.1, batas_maks: 0.5 };
+// Used until the server answers, and if it cannot be reached.
+const CADANGAN = { metode: "cnn", metode_nama: "Model CNN (ResNet18)", model_versi: "", batas_default: 0.4, batas_min: 0.05, batas_maks: 1.0 };
 
-// Each method has its own distance scale, so the remembered threshold is kept per method.
+// Every training gives the model a new distance scale, so the remembered threshold is kept per model version.
 function batasTersimpan(p) {
   try {
-    const v = Number(localStorage.getItem(`batas_${p.metode}`));
+    const v = Number(localStorage.getItem(`batas_${p.metode}_${p.model_versi}`));
     return v >= p.batas_min && v <= p.batas_maks ? v : p.batas_default;
   } catch {
     return p.batas_default;
@@ -45,7 +45,7 @@ export default function Scan() {
     const v = Number(e.target.value);
     setBatas(v);
     try {
-      localStorage.setItem(`batas_${p.metode}`, String(v));
+      localStorage.setItem(`batas_${p.metode}_${p.model_versi}`, String(v));
     } catch {
       // private mode: the slider still works, it just will not be remembered
     }

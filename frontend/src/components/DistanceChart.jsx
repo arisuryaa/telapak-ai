@@ -1,6 +1,6 @@
 // Horizontal bars: distance to each enrolled hand, with the threshold marked.
 // Bars under the threshold are blue (recognized); the rest are grey.
-// `maks` is the far end of the scale: 0.5 for Gabor, 1.0 for Canny (the server sends it with the result).
+// `maks` is the far end of the scale (1.0 for the cosine distance of the model; the server sends it with the result).
 export default function DistanceChart({ jarak, batas, maks = 0.5 }) {
   if (jarak.length === 0) {
     return <p className="text-sm text-muted">Belum ada data terdaftar untuk dibandingkan.</p>;

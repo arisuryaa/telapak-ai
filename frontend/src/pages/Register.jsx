@@ -168,7 +168,7 @@ function CaraKerja({ sisi }) {
           <span key={i} className="h-2 flex-1 rounded-full bg-lilac" />
         ))}
       </div>
-      <p className="mt-2 text-xs text-muted">Foto tidak disimpan. Yang disimpan hanya kode pola garis telapak.</p>
+      <p className="mt-2 text-xs text-muted">Foto tidak disimpan. Yang disimpan hanya 128 angka (embedding) hasil model dari setiap sampel.</p>
     </Kartu>
   );
 }
@@ -473,7 +473,7 @@ export default function Register() {
                   onChange={(e) => ubah("persetujuan", e.target.checked)}
                   className="mt-0.5 h-4 w-4 accent-brand"
                 />
-                <span>Saya setuju kode pola telapak saya disimpan untuk keperluan demo. Foto tidak disimpan.</span>
+                <span>Saya setuju embedding telapak saya disimpan untuk keperluan demo. Foto tidak disimpan.</span>
               </label>
 
               {galat && <Pesan jenis="galat">{galat}</Pesan>}
