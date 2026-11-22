@@ -1,10 +1,10 @@
 """app.py - Flask API for scanning, collecting samples, and managing enrolled people."""
 import base64
 import logging
-import math
 import os
 import sys
 from collections import Counter
+from pathlib import Path
 
 import numpy as np
 from dotenv import load_dotenv
@@ -12,7 +12,6 @@ from flask import Flask, jsonify, request
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
-import metode as metode_mod
 import palm
 from db import (SISI, STATUS, DatabaseTidakTersedia, Orang, TelapakSudahAda, ambil_orang,
                 buat_engine, daftar_orang, hapus_orang, hapus_semua, muat_galeri,
@@ -20,11 +19,13 @@ from db import (SISI, STATUS, DatabaseTidakTersedia, Orang, TelapakSudahAda, amb
 from pipeline import analisis, baca_frame
 from steps import susun_langkah
 
-ROI_SKALA_MIN, ROI_SKALA_MAX = 0.8, 1.5  # beyond 1.5 the box leaves the palm
-BYTE_PER_SAMPEL = 128 * 128  # one sample is a 128x128 uint8 map
-NILAI_KODE_MAKS = 6  # codes are 0..5 (Gabor) or 0..6 (Canny with direction)
+BYTE_PER_SAMPEL = 128 * 4  # one sample is an embedding of 128 float32 numbers
 JUMLAH_SAMPEL = 8
-DATABASE_DEFAULT = "mysql+pymysql://root:@localhost:3306/telapak_id"
+DATABASE_DEFAULT = "mysql+pymysql://root:@localhost:3306/telapak_ai"
+MODEL_PATH = Path(__file__).resolve().parent.parent / "model" / "telapak.pt"
+# Cosine distance of unit vectors is 0..2; in practice the same palm sits well below 1.
+BATAS_CADANGAN, BATAS_MIN, BATAS_MAKS, SKALA_JARAK_MAKS = 0.4, 0.05, 1.0, 1.0
+METODE_NAMA = "Model CNN (ResNet18)"
 
 log = logging.getLogger("telapak")
 
@@ -34,23 +35,19 @@ def _galat(pesan, status=400, **extra):
     return jsonify({"pesan": pesan, **extra}), status
 
 
-def _batas(nilai, pengaturan):
-    """The threshold from the request, kept inside the slider range of the active method."""
+def _batas(nilai, bawaan):
+    """The threshold from the request, kept inside the slider range."""
     try:
         b = float(nilai)
     except (TypeError, ValueError):
-        return pengaturan["batas_default"]
-    return min(pengaturan["batas_maks"], max(pengaturan["batas_min"], b))
+        return bawaan
+    return min(BATAS_MAKS, max(BATAS_MIN, b))
 
 
-def _isi_sampel(kode, metode):
-    """One sample in words for the log: how many of its 128x128 pixels carry each number."""
-    jumlah = np.bincount(kode.ravel(), minlength=NILAI_KODE_MAKS + 1)
-    if metode == "canny":
-        tepi = int(jumlah[1:].sum())
-        return (f"tepi {tepi} piksel ({100 * tepi / kode.size:.1f}%), per arah 1-6: "
-                + " ".join(str(int(n)) for n in jumlah[1:7]))
-    return "per arah 0-5: " + " ".join(str(int(n)) for n in jumlah[:6])
+def _isi_sampel(e):
+    """One embedding in words for the log: its first numbers and its length (always 1)."""
+    awal = " ".join(f"{v:+.3f}" for v in e[:5])
+    return f"5 angka pertama {awal} ..., panjang {float(np.linalg.norm(e)):.3f}"
 
 
 def _decode_sampel(item):
@@ -60,37 +57,36 @@ def _decode_sampel(item):
         return None
     if len(b) != BYTE_PER_SAMPEL:
         return None
-    arr = np.frombuffer(b, np.uint8).reshape(128, 128)
-    return arr if arr.max() <= NILAI_KODE_MAKS else None
+    arr = np.frombuffer(b, np.float32).copy()
+    return arr if np.isfinite(arr).all() else None
 
 
-def _skala_roi(nilai):
-    k = float(nilai)
-    if not ROI_SKALA_MIN <= k <= ROI_SKALA_MAX:
-        raise ValueError(f"ROI_SKALA harus antara {ROI_SKALA_MIN} dan {ROI_SKALA_MAX}, bukan {nilai}")
-    return k
+def jarak_per_sampel(kode, sampel):
+    """Cosine distance from one embedding to each enrolled embedding of a hand (0 = same direction)."""
+    return np.clip(1.0 - np.asarray(sampel, np.float32) @ np.asarray(kode, np.float32), 0.0, 2.0)
 
 
-def create_app(database_url=None, deteksi=palm.deteksi_tangan, roi_skala=None, metode=None):
+def create_app(database_url=None, deteksi=palm.deteksi_tangan, pengenal=None):
+    """`pengenal` is the trained model (model.Pengenal); by default it is loaded from model/telapak.pt."""
     if database_url is None:
         load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
         database_url = os.environ.get("DATABASE_URL", DATABASE_DEFAULT)
-    roi_skala = _skala_roi(os.environ.get("ROI_SKALA", "1.0") if roi_skala is None else roi_skala)
-    metode = metode_mod.periksa(os.environ.get("METODE", metode_mod.METODE_DEFAULT) if metode is None else metode)
-    pengaturan_metode = metode_mod.pengaturan(metode)
+    if pengenal is None:
+        from model import Pengenal  # torch is only loaded when the real model is used
+        pengenal = Pengenal.dari_file(MODEL_PATH)
+    batas_bawaan = BATAS_CADANGAN if pengenal.batas is None else round(float(pengenal.batas), 4)
+    versi = pengenal.versi
 
     app = Flask(__name__)
     engine = buat_engine(database_url)
     log.info("database: %s", make_url(database_url).render_as_string(hide_password=True))
-    log.info("ukuran kotak ROI: %gx lebar telapak", roi_skala)
-    log.info("metode: %s (batas bawaan %.2f)", pengaturan_metode["nama"], pengaturan_metode["batas_default"])
+    log.info("model: %s versi %s (batas bawaan %.3f)", METODE_NAMA, versi, batas_bawaan)
 
     @app.get("/api/pengaturan")
     def pengaturan():
-        return jsonify({"roi_skala": roi_skala, "metode": metode, "metode_nama": pengaturan_metode["nama"],
-                        "batas_default": pengaturan_metode["batas_default"],
-                        "batas_min": pengaturan_metode["batas_min"], "batas_maks": pengaturan_metode["batas_maks"],
-                        "skala_jarak_maks": pengaturan_metode["skala_jarak_maks"]})
+        return jsonify({"roi_skala": 1.0, "metode": "cnn", "metode_nama": METODE_NAMA, "model_versi": versi,
+                        "batas_default": batas_bawaan, "batas_min": BATAS_MIN, "batas_maks": BATAS_MAKS,
+                        "skala_jarak_maks": SKALA_JARAK_MAKS})
 
     @app.post("/api/scan")
     def scan():
@@ -98,11 +94,10 @@ def create_app(database_url=None, deteksi=palm.deteksi_tangan, roi_skala=None, m
         frame = baca_frame(body.get("frame", ""))
         if frame is None:
             return _galat("Gambar tidak valid")
-        batas = _batas(body.get("batas"), pengaturan_metode)
-        info = {"metode": metode, "metode_nama": pengaturan_metode["nama"],
-                "skala_maks": pengaturan_metode["skala_jarak_maks"]}
+        batas = _batas(body.get("batas"), batas_bawaan)
+        info = {"metode": "cnn", "metode_nama": METODE_NAMA, "model_versi": versi, "skala_maks": SKALA_JARAK_MAKS}
 
-        a = analisis(frame, deteksi=deteksi, roi_skala=roi_skala, metode=metode)
+        a = analisis(frame, pengenal, deteksi=deteksi)
         if a.gagal:
             return jsonify({
                 "langkah": susun_langkah(a),
@@ -114,20 +109,17 @@ def create_app(database_url=None, deteksi=palm.deteksi_tangan, roi_skala=None, m
 
         with Session(engine) as s:
             semua = muat_galeri(s)
-        # Codes made with another method or ROI box are not comparable, so leave them out.
-        bentuk = palm.versi_bentuk(roi_skala)
-        galeri = [g for g in semua if g["metode"] == metode and math.isclose(g["roi_skala"], roi_skala)
-                  and g["roi_bentuk"] == bentuk]
+        # Embeddings of another training of the model are not comparable, so leave them out.
+        galeri = [g for g in semua if g["model_versi"] == versi]
         if not galeri:
             jarak = []
             pesan = ("Belum ada yang terdaftar" if not semua else
-                     f"Belum ada yang terdaftar dengan metode {pengaturan_metode['nama']} dan ukuran kotak "
-                     f"{roi_skala:g}×. Daftar ulang dulu.")
+                     f"Belum ada yang terdaftar dengan model ini (versi {versi}). Daftar ulang dulu.")
             hasil = {"status": "tidak_dikenal", "pesan": pesan}
         else:
             jarak = []
             for g in galeri:
-                per_sampel = metode_mod.jarak_per_sampel(metode, a.kode, g["kode"])
+                per_sampel = jarak_per_sampel(a.kode, g["kode"])
                 # a hand's distance is its closest sample, so one good enrolment photo is enough
                 jarak.append({"telapak_id": g["telapak_id"], "orang_id": g["orang_id"], "nama": g["nama"],
                               "sisi": g["sisi"], "jarak": float(min(per_sampel))})
@@ -156,13 +148,13 @@ def create_app(database_url=None, deteksi=palm.deteksi_tangan, roi_skala=None, m
         frame = baca_frame(body.get("frame", ""))
         if frame is None:
             return _galat("Gambar tidak valid")
-        a = analisis(frame, deteksi=deteksi, roi_skala=roi_skala, metode=metode)
+        a = analisis(frame, pengenal, deteksi=deteksi)
         if a.gagal:
             log.info("sampel: ditolak, %s", a.gagal)
             return jsonify({"valid": False, "pesan": a.gagal, "sisi": None, "kode": None})
         log.info("sampel: diterima, sisi=%s", a.sisi)
         return jsonify({"valid": True, "pesan": "Sampel diterima", "sisi": a.sisi,
-                        "kode": base64.b64encode(a.kode.tobytes()).decode("ascii")})
+                        "kode": base64.b64encode(np.asarray(a.kode, np.float32).tobytes()).decode("ascii")})
 
     @app.post("/api/orang")
     def simpan_orang():
@@ -206,17 +198,16 @@ def create_app(database_url=None, deteksi=palm.deteksi_tangan, roi_skala=None, m
             elif s.get(Orang, orang_id) is None:
                 return _galat("Orang tidak ditemukan", 404)
             try:
-                simpan_telapak(s, orang_id, sisi, kode, ganti=ganti, roi_skala=roi_skala,
-                               roi_bentuk=palm.versi_bentuk(roi_skala), metode=metode)
+                simpan_telapak(s, orang_id, sisi, kode, ganti=ganti, model_versi=versi)
             except TelapakSudahAda:
                 s.rollback()
                 return _galat(f"Tangan {sisi} sudah terdaftar. Ganti data lama?", 409,
                               perlu_konfirmasi=True)
             s.commit()
-            log.info("tersimpan: orang_id=%s sisi=%s ganti=%s metode=%s kotak=%gx, %d byte = %d sampel x 128x128",
-                     orang_id, sisi, ganti, metode, roi_skala, kode.nbytes, len(kode))
+            log.info("tersimpan: orang_id=%s sisi=%s ganti=%s model=%s, %d byte = %d sampel x 128 angka",
+                     orang_id, sisi, ganti, versi, kode.nbytes, len(kode))
             for i, k in enumerate(kode, 1):
-                log.info("  isi sampel %d: %s", i, _isi_sampel(k, metode))
+                log.info("  isi sampel %d: %s", i, _isi_sampel(k))
             return jsonify({"orang": ambil_orang(s, orang_id)}), 201
 
     @app.get("/api/orang")
@@ -255,7 +246,7 @@ if __name__ == "__main__":
                         format="%(asctime)s %(levelname)s [%(name)s] %(message)s")
     try:
         app = create_app()
-    except (DatabaseTidakTersedia, ValueError) as e:
+    except (DatabaseTidakTersedia, FileNotFoundError, ValueError) as e:
         print(e)
         sys.exit(1)
     app.run(port=5000)

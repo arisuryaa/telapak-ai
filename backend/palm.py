@@ -1,14 +1,14 @@
-"""palm.py - core recognition: palm ROI extraction and Competitive Code.
+"""palm.py - find the hand and cut the 128x128 palm ROI that the CNN model reads.
 
-The math is unchanged from the terminal version. The *_detail functions
-also return the intermediate arrays so the web app can show each step.
+The same functions cut the ROI for the training data (training/data.py) and for the webcam,
+so the model always sees the same kind of crop. ambil_roi_detail also returns the
+intermediate images so the web app can show each step.
 """
 import cv2
 import numpy as np
 import mediapipe as mp
 
 UKURAN = 128  # ROI size in pixels
-GABOR = {"ukuran": 21, "sigma": 4.0, "lambd": 10.0, "gamma": 0.5, "arah": 6}
 
 # Static mode: every request is a single still frame, not a video stream.
 _hands = mp.solutions.hands.Hands(
@@ -35,15 +35,6 @@ def batas_vertikal(skala):
         tambah = 0.5 * (skala - 1)
         return 0.15 - tambah, 1.15 + tambah
     return max(0.0, 0.15 - 0.5 * (skala - 1)), 1.15
-
-
-def versi_bentuk(skala):
-    """Codes can only be compared when they were cut with the same box shape.
-
-    Up to 1.0x the box is identical in every version (version 1). Above 1.0x, version 2 is the
-    box that stops at the wrist; version 1 grew evenly in every direction and ran past the wrist.
-    """
-    return 1 if skala <= 1.0 else 2
 
 
 def ambil_roi_detail(frame_bgr, lm, skala=1.0):
@@ -101,55 +92,9 @@ def ambil_roi(frame_bgr, lm, skala=1.0):
     return None if detail is None else detail["roi"]
 
 
-def _buat_filter():
-    ks = []
-    for j in range(GABOR["arah"]):  # 0, 30, 60, 90, 120, 150 degrees
-        k = cv2.getGaborKernel((GABOR["ukuran"], GABOR["ukuran"]), sigma=GABOR["sigma"],
-                               theta=j * np.pi / 6, lambd=GABOR["lambd"],
-                               gamma=GABOR["gamma"], psi=0)
-        k -= k.mean()  # remove the overall brightness effect
-        ks.append(k.astype(np.float32))
-    return ks
-
-
-_FILTER = _buat_filter()
 _CLAHE = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
 
 
 def terapkan_clahe(roi_gray):
-    """Contrast enhancement used before the Gabor filters (step 5)."""
+    """Contrast enhancement used before the model (step 5), in training and in the app."""
     return _CLAHE.apply(roi_gray)
-
-
-def hitung_kode_detail(roi_gray):
-    """Competitive Code plus its intermediate arrays: CLAHE image, 6 Gabor responses, code."""
-    clahe = terapkan_clahe(roi_gray)
-    g = clahe.astype(np.float32)
-    g = (g - g.mean()) / (g.std() + 1e-6)
-    respons = np.stack([cv2.filter2D(g, cv2.CV_32F, k) for k in _FILTER])
-    kode = np.argmin(respons, axis=0).astype(np.uint8)  # strongest dark line = smallest response
-    return {"clahe": clahe, "respons": respons, "kode": kode}
-
-
-def hitung_kode(roi_gray):
-    """Competitive Code: each pixel gets a value 0..5 (the winning direction)."""
-    return hitung_kode_detail(roi_gray)["kode"]
-
-
-def jarak_kode(a, b, geser=3):
-    """Angular distance (0 = identical, ~0.5 = random). Small shift tolerance."""
-    H, W = a.shape
-    a2 = a[geser:H - geser, geser:W - geser].astype(np.int16)
-    terbaik = 1.0
-    for dy in range(-geser, geser + 1):
-        for dx in range(-geser, geser + 1):
-            b2 = b[geser + dy:H - geser + dy, geser + dx:W - geser + dx].astype(np.int16)
-            d = np.abs(a2 - b2)
-            d = np.minimum(d, 6 - d)
-            terbaik = min(terbaik, float(d.mean()) / 3.0)
-    return terbaik
-
-
-def jarak_ke_orang(kode, daftar_kode):
-    """Distance to one person = distance to their closest enrolled sample."""
-    return min(jarak_kode(kode, k) for k in daftar_kode)

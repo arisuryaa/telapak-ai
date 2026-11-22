@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from db import (DatabaseTidakTersedia, TelapakSudahAda, ambil_orang, buat_engine,
                 hapus_orang, hapus_semua, muat_galeri, simpan_telapak, tambah_orang)
 
-KODE = np.random.default_rng(0).integers(0, 6, (8, 128, 128), dtype=np.uint8)
+KODE = np.random.default_rng(0).normal(size=(8, 128)).astype(np.float32)
 
 
 @pytest.fixture
@@ -73,52 +73,21 @@ def test_pesan_galat_menyertakan_detail():
         buat_engine("mysql+pymysql://root:@127.0.0.1:1/telapak_id")
 
 
-def test_skala_roi_tersimpan(s):
+def test_kode_float32_8x128(s):
     o = tambah_orang(s, "dewa", 21, "mahasiswa")
-    simpan_telapak(s, o.id, "kanan", KODE, roi_skala=1.3)
-    simpan_telapak(s, o.id, "kiri", KODE)
+    t = simpan_telapak(s, o.id, "kanan", KODE, model_versi="v1")
     s.commit()
-    skala = {g["sisi"]: g["roi_skala"] for g in muat_galeri(s)}
-    assert skala == {"kanan": 1.3, "kiri": 1.0}
-    assert ambil_orang(s, o.id)["skala_tangan"] == {"kanan": 1.3, "kiri": 1.0}
+    assert len(t.kode) == 8 * 128 * 4
+    g = muat_galeri(s)[0]
+    assert g["kode"].dtype == np.float32 and g["kode"].shape == (8, 128)
 
 
-def test_migrasi_kolom_skala(tmp_path):
-    # A database created before this column existed gets it added on startup.
-    import sqlite3
-    from sqlalchemy import inspect
-    path = tmp_path / "lama.db"
-    con = sqlite3.connect(path)
-    con.execute("CREATE TABLE orang (id INTEGER PRIMARY KEY, nama VARCHAR(100), umur INTEGER, status VARCHAR(9), dibuat_pada DATETIME)")
-    con.execute("CREATE TABLE telapak (id INTEGER PRIMARY KEY, orang_id INTEGER, sisi VARCHAR(5), kode BLOB, dibuat_pada DATETIME)")
-    con.execute("INSERT INTO orang VALUES (1, 'lama', 30, 'dosen', '2026-11-01 10:00:00')")
-    con.execute("INSERT INTO telapak VALUES (1, 1, 'kanan', ?, '2026-11-01 10:00:00')", (KODE.tobytes(),))
-    con.commit(); con.close()
-    engine = buat_engine(f"sqlite:///{path}")
-    kolom = [c["name"] for c in inspect(engine).get_columns("telapak")]
-    assert "roi_skala" in kolom and "roi_bentuk" in kolom and "metode" in kolom
-    with Session(engine) as sess:
-        g = muat_galeri(sess)[0]
-        assert g["roi_skala"] == 1.0 and g["roi_bentuk"] == 1  # old rows count as the original box shape
-        assert g["metode"] == "gabor"  # and as Gabor, the only method that existed
-
-
-def test_bentuk_kotak_tersimpan_dan_diganti(s):
+def test_versi_model_tersimpan_dan_diganti(s):
     o = tambah_orang(s, "dewa", 21, "mahasiswa")
-    simpan_telapak(s, o.id, "kanan", KODE, roi_skala=1.3, roi_bentuk=2)
+    simpan_telapak(s, o.id, "kanan", KODE, model_versi="v1")
     s.commit()
-    assert muat_galeri(s)[0]["roi_bentuk"] == 2
-    simpan_telapak(s, o.id, "kanan", KODE, ganti=True, roi_skala=1.0, roi_bentuk=1)
+    assert muat_galeri(s)[0]["model_versi"] == "v1"
+    simpan_telapak(s, o.id, "kanan", KODE, ganti=True, model_versi="v2")
     s.commit()
-    assert muat_galeri(s)[0]["roi_bentuk"] == 1
-
-
-def test_metode_tersimpan_dan_diganti(s):
-    o = tambah_orang(s, "dewa", 21, "mahasiswa")
-    simpan_telapak(s, o.id, "kanan", KODE)
-    s.commit()
-    assert muat_galeri(s)[0]["metode"] == "gabor"  # the default
-    simpan_telapak(s, o.id, "kanan", KODE, ganti=True, metode="canny")
-    s.commit()
-    assert muat_galeri(s)[0]["metode"] == "canny"
-    assert ambil_orang(s, o.id)["metode_tangan"] == {"kanan": "canny"}
+    assert muat_galeri(s)[0]["model_versi"] == "v2"
+    assert ambil_orang(s, o.id)["versi_tangan"] == {"kanan": "v2"}

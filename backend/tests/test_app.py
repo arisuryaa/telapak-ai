@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from app import create_app
+from conftest import PengenalPalsu
 from steps import ke_data_url
 
 FIX = Path(__file__).parent / "fixtures"
@@ -37,7 +38,7 @@ def detektor_palsu(frame):
 @pytest.fixture
 def client():
     ESTADO["tangan"] = "terbuka_kanan"
-    app = create_app("sqlite://", deteksi=detektor_palsu)
+    app = create_app("sqlite://", deteksi=detektor_palsu, pengenal=PengenalPalsu())
     return app.test_client()
 
 
@@ -67,7 +68,7 @@ def test_daftar_lalu_dikenali(client):
     assert client.post("/api/orang", json=body_daftar(s["kode"])).status_code == 201
     r = client.post("/api/scan", json={"frame": FRAME, "batas": 0.38}).get_json()
     assert r["hasil"]["status"] == "dikenali" and r["hasil"]["nama"] == "dewa"
-    assert r["hasil"]["jarak"] == 0.0 and r["langkah"][-1]["no"] == 8
+    assert r["hasil"]["jarak"] == pytest.approx(0.0, abs=1e-6) and r["langkah"][-1]["no"] == 8
 
 
 def test_kepal_tidak_pernah_dikenali(client):
@@ -127,119 +128,72 @@ def test_api_mencatat_log(client, caplog):
         client.post("/api/orang", json=body_daftar(s["kode"], umur=0))
     assert "sampel: diterima, sisi=kanan" in caplog.text
     assert "tersimpan: orang_id=1 sisi=kanan" in caplog.text
-    # what went into the database: size, then one line per sample saying how many pixels carry each number
-    assert "131072 byte = 8 sampel x 128x128" in caplog.text
-    assert caplog.text.count("isi sampel ") == 8
+    # what went into the database: size and model version, then one line per sample
+    assert "model=palsu-1, 4096 byte = 8 sampel x 128 angka" in caplog.text
+    assert caplog.text.count("isi sampel ") == 8 and "panjang 1.000" in caplog.text
     assert "scan: dikenali, terdekat dewa (kanan) jarak=0.000" in caplog.text
     # every hand the scan was compared with, with its distance to each of the 8 samples
     assert "dibandingkan: dewa (kanan) jarak=0.000, per sampel: 0.000 0.000" in caplog.text
     assert "POST /api/orang -> 400: Umur harus angka" in caplog.text
 
 
-def test_pengaturan_dan_skala_berbeda(client):
-    assert client.get("/api/pengaturan").get_json()["roi_skala"] == 1.0
+def test_sampel_berisi_512_byte_float32(client):
+    s = sampel_valid(client)
+    v = np.frombuffer(base64.b64decode(s["kode"]), np.float32)
+    assert v.shape == (128,) and abs(float(np.linalg.norm(v)) - 1.0) < 1e-4
+
+
+def test_sampel_rusak_ditolak(client):
+    sampel_valid(client)
+    pendek = base64.b64encode(bytes(511)).decode("ascii")
+    nan = base64.b64encode(np.full(128, np.nan, np.float32).tobytes()).decode("ascii")
+    for rusak in (pendek, nan):
+        r = client.post("/api/orang", json=body_daftar(rusak))
+        assert r.status_code == 400 and r.get_json()["pesan"] == "Data sampel tidak lengkap"
+
+
+def test_versi_model_lain_tidak_dibandingkan(tmp_path):
+    url = f"sqlite:///{tmp_path / 'versi.db'}"
+    lama = create_app(url, deteksi=detektor_palsu, pengenal=PengenalPalsu(versi="lama")).test_client()
+    s = sampel_valid(lama)
+    assert lama.post("/api/orang", json=body_daftar(s["kode"])).status_code == 201
+    baru = create_app(url, deteksi=detektor_palsu, pengenal=PengenalPalsu(versi="baru")).test_client()
+    r = baru.post("/api/scan", json={"frame": FRAME}).get_json()
+    assert r["hasil"]["status"] == "tidak_dikenal" and r["jarak"] == []
+    assert r["hasil"]["pesan"] == "Belum ada yang terdaftar dengan model ini (versi baru). Daftar ulang dulu."
+    assert baru.get("/api/orang").get_json()[0]["versi_tangan"] == {"kanan": "lama"}
+
+
+def test_pengaturan_model(client):
+    p = client.get("/api/pengaturan").get_json()
+    assert (p["metode"], p["model_versi"], p["batas_default"], p["roi_skala"]) == ("cnn", "palsu-1", 0.4, 1.0)
+    assert (p["batas_min"], p["batas_maks"]) == (0.05, 1.0) and p["metode_nama"] == "Model CNN (ResNet18)"
+
+
+def test_batas_dijepit_dan_bawaan_dari_model(client):
+    assert client.post("/api/scan", json={"frame": FRAME, "batas": 3}).get_json()["batas"] == 1.0
+    assert client.post("/api/scan", json={"frame": FRAME, "batas": 0.0}).get_json()["batas"] == 0.05
+    assert client.post("/api/scan", json={"frame": FRAME}).get_json()["batas"] == 0.4
+
+
+def test_batas_cadangan_jika_model_tanpa_batas():
+    c = create_app("sqlite://", deteksi=detektor_palsu, pengenal=PengenalPalsu(batas=None)).test_client()
+    assert c.get("/api/pengaturan").get_json()["batas_default"] == 0.4
+
+
+def test_langkah_model(client):
     s = sampel_valid(client)
     client.post("/api/orang", json=body_daftar(s["kode"]))
-    besar = create_app("sqlite://", deteksi=detektor_palsu, roi_skala=1.3).test_client()
-    assert besar.get("/api/pengaturan").get_json()["roi_skala"] == 1.3
-    s2 = besar.post("/api/sampel", json={"frame": FRAME}).get_json()
-    assert s2["valid"]
-    besar.post("/api/orang", json=body_daftar(s2["kode"], nama="lama"))
-    # each test app has its own in-memory database; a 1.3x enrollment matches a 1.3x scan
-    r = besar.post("/api/scan", json={"frame": FRAME, "batas": 0.38}).get_json()
-    assert r["hasil"]["status"] == "dikenali"
-
-
-def test_scan_abaikan_data_bentuk_kotak_lama(tmp_path):
-    # A hand enrolled at 1.3x before the box stopped growing past the wrist has the same scale but another shape.
-    from sqlalchemy import create_engine, text
-    url = f"sqlite:///{tmp_path / 'bentuk.db'}"
-    c = create_app(url, deteksi=detektor_palsu, roi_skala=1.3).test_client()
-    s = c.post("/api/sampel", json={"frame": FRAME}).get_json()
-    c.post("/api/orang", json=body_daftar(s["kode"]))
-    assert c.post("/api/scan", json={"frame": FRAME, "batas": 0.38}).get_json()["hasil"]["status"] == "dikenali"
-    with create_engine(url).begin() as conn:
-        conn.execute(text("UPDATE telapak SET roi_bentuk = 1"))
-    r = c.post("/api/scan", json={"frame": FRAME, "batas": 0.38}).get_json()
-    assert r["hasil"]["pesan"] == "Belum ada yang terdaftar dengan metode Canny + arah dan ukuran kotak 1.3×. Daftar ulang dulu."
-    assert r["jarak"] == []
-
-
-def test_scan_abaikan_data_skala_lain(tmp_path):
-    url = f"sqlite:///{tmp_path / 'campur.db'}"
-    lama = create_app(url, deteksi=detektor_palsu, roi_skala=1.0).test_client()
-    s = lama.post("/api/sampel", json={"frame": FRAME}).get_json()
-    lama.post("/api/orang", json=body_daftar(s["kode"]))
-    baru = create_app(url, deteksi=detektor_palsu, roi_skala=1.3).test_client()
-    r = baru.post("/api/scan", json={"frame": FRAME, "batas": 0.38}).get_json()
-    assert r["hasil"]["status"] == "tidak_dikenal"
-    assert r["hasil"]["pesan"] == "Belum ada yang terdaftar dengan metode Canny + arah dan ukuran kotak 1.3×. Daftar ulang dulu."
-    assert r["jarak"] == []
-
-
-def test_pengaturan_menyebut_metode_dan_rentang_batas():
-    canny = create_app("sqlite://", deteksi=detektor_palsu, metode="canny").test_client().get("/api/pengaturan").get_json()
-    gabor = create_app("sqlite://", deteksi=detektor_palsu, metode="gabor").test_client().get("/api/pengaturan").get_json()
-    assert canny["metode"] == "canny" and gabor["metode"] == "gabor"
-    assert (gabor["batas_default"], gabor["batas_min"], gabor["batas_maks"]) == (0.38, 0.10, 0.50)
-    assert (canny["batas_default"], canny["batas_min"], canny["batas_maks"]) == (0.75, 0.40, 0.95)
-    assert gabor["skala_jarak_maks"] == 0.5 and canny["skala_jarak_maks"] == 1.0
-
-
-def test_metode_tidak_dikenal_ditolak():
-    with pytest.raises(ValueError, match="METODE harus"):
-        create_app("sqlite://", deteksi=detektor_palsu, metode="sobel")
-
-
-def test_metode_bawaan_dari_env(monkeypatch, tmp_path):
-    monkeypatch.setenv("METODE", "gabor")
-    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'env.db'}")
-    app = create_app(deteksi=detektor_palsu)
-    assert app.test_client().get("/api/pengaturan").get_json()["metode"] == "gabor"
-
-
-def test_batas_dijepit_ke_rentang_metode():
-    gabor = create_app("sqlite://", deteksi=detektor_palsu, metode="gabor").test_client()
-    canny = create_app("sqlite://", deteksi=detektor_palsu, metode="canny").test_client()
-    assert gabor.post("/api/scan", json={"frame": FRAME, "batas": 0.9}).get_json()["batas"] == 0.5
-    assert canny.post("/api/scan", json={"frame": FRAME, "batas": 0.1}).get_json()["batas"] == 0.4
-    assert canny.post("/api/scan", json={"frame": FRAME}).get_json()["batas"] == 0.75  # no value sent: the default
-
-
-@pytest.mark.parametrize("metode,judul6,judul7,jumlah_gambar6", [
-    ("gabor", "Filter Gabor 6 arah", "Competitive Code", 6),
-    ("canny", "Canny: blur dan gradien", "Tepi Canny dan arahnya", 2),
-])
-def test_daftar_dan_scan_dengan_setiap_metode(metode, judul6, judul7, jumlah_gambar6):
-    c = create_app("sqlite://", deteksi=detektor_palsu, metode=metode).test_client()
-    s = sampel_valid(c)
-    assert c.post("/api/orang", json=body_daftar(s["kode"])).status_code == 201
-    batas = c.get("/api/pengaturan").get_json()["batas_default"]
-    r = c.post("/api/scan", json={"frame": FRAME, "batas": batas}).get_json()
-    assert r["hasil"]["status"] == "dikenali" and r["hasil"]["jarak"] == 0.0
-    assert r["metode"] == metode and r["skala_maks"] == (0.5 if metode == "gabor" else 1.0)
+    r = client.post("/api/scan", json={"frame": FRAME}).get_json()
     langkah = {l["no"]: l for l in r["langkah"]}
-    assert langkah[6]["judul"] == judul6 and len(langkah[6]["gambar"]) == jumlah_gambar6
-    assert langkah[7]["judul"] == judul7 and len(langkah[7]["legenda"]) == 6
     assert [l["no"] for l in r["langkah"]] == [1, 2, 3, 4, 5, 6, 7, 8]
-    assert c.get("/api/orang").get_json()[0]["metode_tangan"] == {"kanan": metode}
+    assert [langkah[n]["judul"] for n in (5, 6, 7)] == ["Masukan model", "Model CNN: peta fitur", "Embedding 128 angka"]
+    assert len(langkah[6]["gambar"]) == 8 and len(langkah[7]["gambar"]) == 1
+    assert langkah[7]["angka"]["versi model"] == "palsu-1" and r["skala_maks"] == 1.0 and r["metode"] == "cnn"
 
 
-def test_scan_abaikan_data_metode_lain_dan_pakai_lagi_saat_kembali(tmp_path):
-    url = f"sqlite:///{tmp_path / 'metode.db'}"
-    gabor = create_app(url, deteksi=detektor_palsu, metode="gabor").test_client()
-    s = gabor.post("/api/sampel", json={"frame": FRAME}).get_json()
-    gabor.post("/api/orang", json=body_daftar(s["kode"]))
-    canny = create_app(url, deteksi=detektor_palsu, metode="canny").test_client()
-    r = canny.post("/api/scan", json={"frame": FRAME}).get_json()
-    assert r["hasil"]["status"] == "tidak_dikenal" and r["jarak"] == []
-    assert "metode Canny + arah" in r["hasil"]["pesan"] and "Daftar ulang dulu" in r["hasil"]["pesan"]
-    # the Gabor hand is still in the database and is used again when the method goes back to Gabor
-    lagi = create_app(url, deteksi=detektor_palsu, metode="gabor").test_client()
-    assert lagi.post("/api/scan", json={"frame": FRAME, "batas": 0.38}).get_json()["hasil"]["status"] == "dikenali"
-
-
-def test_kode_dengan_nilai_di_luar_rentang_ditolak(client):
-    s = sampel_valid(client)
-    rusak = base64.b64encode(bytes([9]) * (128 * 128)).decode("ascii")
-    assert client.post("/api/orang", json=body_daftar(rusak)).status_code == 400
+def test_tanpa_file_model_pesan_jelas(monkeypatch, tmp_path):
+    import app as app_mod
+    monkeypatch.setattr(app_mod, "MODEL_PATH", tmp_path / "tidak_ada.pt")
+    with pytest.raises(FileNotFoundError, match="Jalankan training dulu"):
+        create_app("sqlite://", deteksi=detektor_palsu)

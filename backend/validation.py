@@ -58,7 +58,7 @@ def ukur_roi(roi):
     """Return (mean brightness, sharpness).
 
     Sharpness is the variance of the Laplacian measured after CLAHE, on the same
-    image the Gabor filters see. Raw palm skin is smooth (about 3-5 on a sharp
+    image the model sees. Raw palm skin is smooth (about 3-5 on a sharp
     webcam photo), so measuring before CLAHE rejected good photos.
     """
     tajam = cv2.Laplacian(palm.terapkan_clahe(roi), cv2.CV_64F).var()

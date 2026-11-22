@@ -17,26 +17,6 @@ def titik_tiruan(titik_px, w, h):
     return lm
 
 
-def test_kode_sama_dengan_versi_lama():
-    roi = np.load(FIX / "roi_test.npy")
-    assert np.array_equal(palm.hitung_kode(roi), np.load(FIX / "code_golden.npy"))
-
-
-def test_kode_detail_konsisten():
-    roi = np.load(FIX / "roi_test.npy")
-    d = palm.hitung_kode_detail(roi)
-    assert d["respons"].shape == (6, 128, 128) and d["clahe"].dtype == np.uint8
-    assert np.array_equal(d["kode"], palm.hitung_kode(roi))
-
-
-def test_jarak_diri_nol_acak_setengah():
-    rng = np.random.default_rng(1)
-    a = rng.integers(0, 6, (128, 128), dtype=np.uint8)
-    b = rng.integers(0, 6, (128, 128), dtype=np.uint8)
-    assert palm.jarak_kode(a, a) == 0.0
-    assert 0.40 < palm.jarak_kode(a, b) < 0.55
-
-
 def test_roi_dari_landmark_tiruan():
     lm = titik_tiruan({0: (320, 420), 5: (360, 300), 17: (272, 312)}, 640, 480)
     d = palm.ambil_roi_detail(np.zeros((480, 640, 3), np.uint8), lm)
@@ -82,13 +62,12 @@ def _jarak_tepi(kotak, y_garis):
     return tuple(sorted(abs(y - y_garis) for y in (kotak[1], kotak[3])))
 
 
-def test_batas_vertikal_dan_versi_bentuk():
+def test_batas_vertikal():
     assert palm.batas_vertikal(1.0) == (0.15, 1.15)
     atas, bawah = palm.batas_vertikal(0.8)
     assert abs(atas - 0.25) < 1e-9 and abs(bawah - 1.05) < 1e-9  # smaller boxes still shrink evenly
     assert palm.batas_vertikal(1.3) == (0.0, 1.15)  # top reaches the finger-base line, bottom stays at the wrist
     assert palm.batas_vertikal(1.5) == (0.0, 1.15)
-    assert [palm.versi_bentuk(k) for k in (0.8, 1.0, 1.3, 1.5)] == [1, 1, 2, 2]
 
 
 def test_kotak_besar_tidak_melewati_pergelangan():

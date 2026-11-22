@@ -1,21 +1,20 @@
 """db.py - MySQL models and the data functions the API uses.
 
-Only palm codes are stored, never photos. Each person can have one code set
-per hand side (kiri / kanan), each set holding 8 samples of 128x128 uint8.
+Only palm embeddings are stored, never photos. Each person can have one set
+per hand side (kiri / kanan), each set holding 8 embeddings of 128 float32 numbers.
 """
 from datetime import datetime, timezone
 
 import numpy as np
-from sqlalchemy import (DateTime, Enum, Float, ForeignKey, Integer, LargeBinary, String,
-                        UniqueConstraint, create_engine, delete, inspect, select, text)
-from sqlalchemy.dialects import mysql
+from sqlalchemy import (DateTime, Enum, ForeignKey, Integer, LargeBinary, String,
+                        UniqueConstraint, create_engine, delete, select, text)
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 STATUS = ("mahasiswa", "dosen", "staf", "tamu")
 SISI = ("kiri", "kanan")
-UKURAN = 128
+DIMENSI = 128  # numbers per embedding
 
 
 class DatabaseTidakTersedia(Exception):
@@ -52,30 +51,12 @@ class Telapak(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     orang_id: Mapped[int] = mapped_column(ForeignKey("orang.id", ondelete="CASCADE"))
     sisi: Mapped[str] = mapped_column(Enum(*SISI, name="sisi"))
-    # 8 * 128 * 128 bytes is about 128 KB, which is over the plain BLOB limit of 64 KB on MySQL
-    kode: Mapped[bytes] = mapped_column(LargeBinary().with_variant(mysql.LONGBLOB(), "mysql"))
-    # ROI box size used for these codes; codes from different sizes cannot be compared
-    roi_skala: Mapped[float] = mapped_column(Float, default=1.0, server_default=text("1.0"))
-    # shape version of the box (palm.versi_bentuk); the same roi_skala can mean different boxes in different versions
-    roi_bentuk: Mapped[int] = mapped_column(Integer, default=1, server_default=text("1"))
-    # how the ROI became this code (metode.py); codes from different methods cannot be compared
-    metode: Mapped[str] = mapped_column(String(10), default="gabor", server_default=text("'gabor'"))
+    # 8 embeddings x 128 float32 = 4096 bytes
+    kode: Mapped[bytes] = mapped_column(LargeBinary)
+    # the model that made these embeddings; embeddings of two different trainings cannot be compared
+    model_versi: Mapped[str] = mapped_column(String(20), default="")
     dibuat_pada: Mapped[datetime] = mapped_column(DateTime, default=_sekarang)
     orang: Mapped[Orang] = relationship(back_populates="telapak")
-
-
-def _migrasi(engine):
-    """Add columns introduced after the first release to an existing database."""
-    kolom = {c["name"] for c in inspect(engine).get_columns("telapak")}
-    if "roi_skala" not in kolom:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE telapak ADD COLUMN roi_skala FLOAT NOT NULL DEFAULT 1.0"))
-    if "roi_bentuk" not in kolom:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE telapak ADD COLUMN roi_bentuk INT NOT NULL DEFAULT 1"))
-    if "metode" not in kolom:  # every hand enrolled before this column existed used Gabor
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE telapak ADD COLUMN metode VARCHAR(10) NOT NULL DEFAULT 'gabor'"))
 
 
 def _pesan_tidak_tersedia(url, err):
@@ -101,18 +82,17 @@ def buat_engine(url):
                 conn.commit()
         engine = create_engine(url, pool_pre_ping=True)
         Base.metadata.create_all(engine)
-        _migrasi(engine)
     except OperationalError as e:
         raise DatabaseTidakTersedia(_pesan_tidak_tersedia(u, e)) from e
     return engine
 
 
 def kode_ke_bytes(kode):
-    return np.asarray(kode, np.uint8).tobytes()
+    return np.asarray(kode, np.float32).tobytes()
 
 
 def bytes_ke_kode(b):
-    return np.frombuffer(b, np.uint8).reshape(-1, UKURAN, UKURAN).copy()
+    return np.frombuffer(b, np.float32).reshape(-1, DIMENSI).copy()
 
 
 def tambah_orang(s, nama, umur, status):
@@ -122,20 +102,17 @@ def tambah_orang(s, nama, umur, status):
     return o
 
 
-def simpan_telapak(s, orang_id, sisi, kode, ganti=False, roi_skala=1.0, roi_bentuk=1, metode="gabor"):
-    """Store the code set for one hand. Raises TelapakSudahAda unless `ganti` is True."""
+def simpan_telapak(s, orang_id, sisi, kode, ganti=False, model_versi=""):
+    """Store the embeddings of one hand. Raises TelapakSudahAda unless `ganti` is True."""
     ada = s.scalar(select(Telapak).where(Telapak.orang_id == orang_id, Telapak.sisi == sisi))
     if ada is not None:
         if not ganti:
             raise TelapakSudahAda(sisi)
         ada.kode = kode_ke_bytes(kode)
-        ada.roi_skala = roi_skala
-        ada.roi_bentuk = roi_bentuk
-        ada.metode = metode
+        ada.model_versi = model_versi
         s.flush()
         return ada
-    t = Telapak(orang_id=orang_id, sisi=sisi, kode=kode_ke_bytes(kode), roi_skala=roi_skala,
-                roi_bentuk=roi_bentuk, metode=metode)
+    t = Telapak(orang_id=orang_id, sisi=sisi, kode=kode_ke_bytes(kode), model_versi=model_versi)
     s.add(t)
     s.flush()
     return t
@@ -146,8 +123,7 @@ def muat_galeri(s):
     rows = s.execute(select(Telapak, Orang).join(Telapak.orang)).all()
     return [{
         "telapak_id": t.id, "orang_id": o.id, "nama": o.nama,
-        "sisi": t.sisi, "kode": bytes_ke_kode(t.kode), "roi_skala": t.roi_skala, "roi_bentuk": t.roi_bentuk,
-        "metode": t.metode,
+        "sisi": t.sisi, "kode": bytes_ke_kode(t.kode), "model_versi": t.model_versi,
     } for t, o in rows]
 
 
@@ -155,8 +131,7 @@ def orang_ke_dict(o):
     return {
         "id": o.id, "nama": o.nama, "umur": o.umur, "status": o.status,
         "tangan": sorted(t.sisi for t in o.telapak),
-        "skala_tangan": {t.sisi: t.roi_skala for t in o.telapak},
-        "metode_tangan": {t.sisi: t.metode for t in o.telapak},
+        "versi_tangan": {t.sisi: t.model_versi for t in o.telapak},
         "dibuat_pada": o.dibuat_pada.isoformat(),
     }
 
