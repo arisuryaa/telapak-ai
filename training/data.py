@@ -27,6 +27,9 @@ SESI = ("session1", "session2")
 EKSTENSI = {".bmp", ".jpg", ".jpeg", ".png", ".tif", ".tiff"}
 FOTO_PER_TELAPAK = 10
 JUMLAH_DAFTAR = 8  # photos of session1 used to enrol a palm in the evaluation, like the 8 samples in the app
+# When the hand fills the photo, the ROI box reaches past the photo edge and the rotated photo is pure black
+# there. A webcam ROI never looks like that, so such crops are not used for training.
+BATAS_HITAM = 0.02  # largest share of pure black (0) pixels a usable ROI may have
 
 
 def id_telapak(nama_file):
@@ -49,8 +52,11 @@ def _baca(path):
 
 
 def siapkan_roi(folder_asli, folder_keluar, deteksi=palm.deteksi_tangan):
-    """Cut the ROI of every photo with MediaPipe + palm.ambil_roi. Photos that fail are skipped and counted."""
-    hasil = {"total": 0, "berhasil": 0, "gagal": []}
+    """Cut the ROI of every photo with MediaPipe + palm.ambil_roi. Photos that fail are skipped and counted.
+
+    "sudut_hitam" counts the failures whose box went past the photo edge (see BATAS_HITAM).
+    """
+    hasil = {"total": 0, "berhasil": 0, "gagal": [], "sudut_hitam": 0}
     for sesi in SESI:
         tujuan = Path(folder_keluar) / sesi
         for path in _foto(Path(folder_asli) / sesi):
@@ -58,8 +64,10 @@ def siapkan_roi(folder_asli, folder_keluar, deteksi=palm.deteksi_tangan):
             frame = _baca(path)
             deteksi_hasil = None if frame is None else deteksi(frame)
             roi = None if deteksi_hasil is None else palm.ambil_roi(frame, deteksi_hasil[0])
-            if roi is None:
+            hitam = roi is not None and float((roi == 0).mean()) > BATAS_HITAM
+            if roi is None or hitam:
                 hasil["gagal"].append(f"{sesi}/{path.name}")
+                hasil["sudut_hitam"] += hitam
                 continue
             tujuan.mkdir(parents=True, exist_ok=True)
             cv2.imwrite(str(tujuan / f"{path.stem}.png"), roi)
@@ -116,7 +124,8 @@ def buat_pembagian(folder_roi, seed=42):
 def _laporan(hasil, sumber, pembagian):
     persen = 100 * hasil["berhasil"] / hasil["total"] if hasil["total"] else 0.0
     baris = [f"Sumber ROI: {sumber}",
-             f"Foto: {hasil['total']}, berhasil: {hasil['berhasil']} ({persen:.1f}%), gagal: {len(hasil['gagal'])}",
+             f"Foto: {hasil['total']}, berhasil: {hasil['berhasil']} ({persen:.1f}%), gagal: {len(hasil['gagal'])}"
+             + (f" (di antaranya {hasil['sudut_hitam']} karena kotak keluar dari foto)" if hasil.get("sudut_hitam") else ""),
              f"Telapak: latih {len(pembagian['latih'])}, validasi {len(pembagian['validasi'])}, uji {len(pembagian['uji'])}"]
     if hasil["gagal"]:
         baris.append("Contoh foto gagal: " + ", ".join(hasil["gagal"][:20]))

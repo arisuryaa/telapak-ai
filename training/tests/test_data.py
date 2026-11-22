@@ -21,7 +21,7 @@ def test_siapkan_roi_melewati_foto_gagal(tmp_path, deteksi_tiruan, buat_foto_ton
 def test_siapkan_roi_tangan_tidak_terdeteksi_dihitung_gagal(tmp_path, buat_foto_tongji):
     buat_foto_tongji(tmp_path / "asli", "session2", [1])
     hasil = siapkan_roi(tmp_path / "asli", tmp_path / "roi", deteksi=lambda f: None)
-    assert hasil == {"total": 1, "berhasil": 0, "gagal": ["session2/00001.bmp"]}
+    assert hasil == {"total": 1, "berhasil": 0, "gagal": ["session2/00001.bmp"], "sudut_hitam": 0}
 
 
 def test_salin_roi_bawaan_jadi_abu_abu_128(tmp_path):
@@ -43,3 +43,20 @@ def test_pembagian_per_telapak_tidak_bocor(tmp_path):
     assert len(semua) == len(set(semua)) == 20 and 20 not in semua and 21 not in semua
     assert (len(p["latih"]), len(p["validasi"]), len(p["uji"])) == (14, 2, 4)
     assert buat_pembagian(tmp_path) == p  # fixed seed = same split
+
+
+def test_roi_dengan_sudut_hitam_dari_luar_foto_dilewati(tmp_path, deteksi_tiruan, buat_foto_tongji, monkeypatch):
+    """When the hand fills the photo, the box reaches past the photo edge and the rotated photo is black there."""
+    import numpy as np
+    import palm
+    buat_foto_tongji(tmp_path / "asli", "session1", [1, 2])
+    asli = palm.ambil_roi
+
+    def roi_dengan_sudut_hitam(frame, lm):
+        roi = asli(frame, lm).copy()
+        roi[100:, :40] = 0  # about 7% of the ROI is padding
+        return roi
+    monkeypatch.setattr(palm, "ambil_roi", roi_dengan_sudut_hitam)
+    hasil = siapkan_roi(tmp_path / "asli", tmp_path / "roi", deteksi=deteksi_tiruan)
+    assert hasil["berhasil"] == 0 and hasil["gagal"] == ["session1/00001.bmp", "session1/00002.bmp"]
+    assert hasil["sudut_hitam"] == 2
