@@ -16,6 +16,7 @@ import json
 import random
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -27,9 +28,10 @@ SESI = ("session1", "session2")
 EKSTENSI = {".bmp", ".jpg", ".jpeg", ".png", ".tif", ".tiff"}
 FOTO_PER_TELAPAK = 10
 JUMLAH_DAFTAR = 8  # photos of session1 used to enrol a palm in the evaluation, like the 8 samples in the app
-# When the hand fills the photo, the ROI box reaches past the photo edge and the rotated photo is pure black
-# there. A webcam ROI never looks like that, so such crops are not used for training.
-BATAS_HITAM = 0.02  # largest share of pure black (0) pixels a usable ROI may have
+# Tongji photos are taken close up, so the bottom of the ROI box often sticks out of the photo by a few
+# percent. The photo is mirrored past its edges to fill that strip; crops with more of the box outside
+# the photo than this are not used.
+BATAS_LUAR = 0.10
 
 
 def id_telapak(nama_file):
@@ -51,23 +53,41 @@ def _baca(path):
     return img[:, :, :3] if img.shape[2] == 4 else img
 
 
+def potong_roi(frame, lm):
+    """(ROI, share of the box outside the photo), cut like palm.ambil_roi but allowed past the photo edge.
+
+    The photo is mirrored past its edges first, so a box that sticks out a little still gets palm-like
+    pixels there instead of black. ROI is None when the hand is too small or more than BATAS_LUAR of the
+    box is outside the photo; the share is None when the hand is too small to measure.
+    """
+    h, w = frame.shape[:2]
+    pad = max(h, w) // 2
+    besar = cv2.copyMakeBorder(frame, pad, pad, pad, pad, cv2.BORDER_REFLECT_101)
+    topeng = cv2.copyMakeBorder(np.full((h, w, 3), 255, np.uint8), pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=0)
+    titik = [SimpleNamespace(x=(q.x * w + pad) / (w + 2 * pad), y=(q.y * h + pad) / (h + 2 * pad), z=0.0) for q in lm]
+    roi = palm.ambil_roi(besar, titik)
+    if roi is None:
+        return None, None
+    luar = float((palm.ambil_roi(topeng, titik) < 128).mean())
+    return (roi if luar <= BATAS_LUAR else None), luar
+
+
 def siapkan_roi(folder_asli, folder_keluar, deteksi=palm.deteksi_tangan):
     """Cut the ROI of every photo with MediaPipe + palm.ambil_roi. Photos that fail are skipped and counted.
 
-    "sudut_hitam" counts the failures whose box went past the photo edge (see BATAS_HITAM).
+    "keluar_foto" counts the failures whose box stuck out of the photo by more than BATAS_LUAR.
     """
-    hasil = {"total": 0, "berhasil": 0, "gagal": [], "sudut_hitam": 0}
+    hasil = {"total": 0, "berhasil": 0, "gagal": [], "keluar_foto": 0}
     for sesi in SESI:
         tujuan = Path(folder_keluar) / sesi
         for path in _foto(Path(folder_asli) / sesi):
             hasil["total"] += 1
             frame = _baca(path)
             deteksi_hasil = None if frame is None else deteksi(frame)
-            roi = None if deteksi_hasil is None else palm.ambil_roi(frame, deteksi_hasil[0])
-            hitam = roi is not None and float((roi == 0).mean()) > BATAS_HITAM
-            if roi is None or hitam:
+            roi, luar = (None, None) if deteksi_hasil is None else potong_roi(frame, deteksi_hasil[0])
+            if roi is None:
                 hasil["gagal"].append(f"{sesi}/{path.name}")
-                hasil["sudut_hitam"] += hitam
+                hasil["keluar_foto"] += luar is not None and luar > BATAS_LUAR
                 continue
             tujuan.mkdir(parents=True, exist_ok=True)
             cv2.imwrite(str(tujuan / f"{path.stem}.png"), roi)
@@ -125,7 +145,8 @@ def _laporan(hasil, sumber, pembagian):
     persen = 100 * hasil["berhasil"] / hasil["total"] if hasil["total"] else 0.0
     baris = [f"Sumber ROI: {sumber}",
              f"Foto: {hasil['total']}, berhasil: {hasil['berhasil']} ({persen:.1f}%), gagal: {len(hasil['gagal'])}"
-             + (f" (di antaranya {hasil['sudut_hitam']} karena kotak keluar dari foto)" if hasil.get("sudut_hitam") else ""),
+             + (f" (di antaranya {hasil['keluar_foto']} karena lebih dari {BATAS_LUAR:.0%} kotak keluar dari foto)"
+                if hasil.get("keluar_foto") else ""),
              f"Telapak: latih {len(pembagian['latih'])}, validasi {len(pembagian['validasi'])}, uji {len(pembagian['uji'])}"]
     if hasil["gagal"]:
         baris.append("Contoh foto gagal: " + ", ".join(hasil["gagal"][:20]))

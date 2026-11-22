@@ -1,7 +1,9 @@
 import cv2
 import numpy as np
 
-from training.data import buat_pembagian, id_telapak, salin_roi_bawaan, siapkan_roi
+import pytest
+
+from training.data import buat_pembagian, id_telapak, potong_roi, salin_roi_bawaan, siapkan_roi
 from training.tests.conftest import tulis_roi
 
 
@@ -21,7 +23,7 @@ def test_siapkan_roi_melewati_foto_gagal(tmp_path, deteksi_tiruan, buat_foto_ton
 def test_siapkan_roi_tangan_tidak_terdeteksi_dihitung_gagal(tmp_path, buat_foto_tongji):
     buat_foto_tongji(tmp_path / "asli", "session2", [1])
     hasil = siapkan_roi(tmp_path / "asli", tmp_path / "roi", deteksi=lambda f: None)
-    assert hasil == {"total": 1, "berhasil": 0, "gagal": ["session2/00001.bmp"], "sudut_hitam": 0}
+    assert hasil == {"total": 1, "berhasil": 0, "gagal": ["session2/00001.bmp"], "keluar_foto": 0}
 
 
 def test_salin_roi_bawaan_jadi_abu_abu_128(tmp_path):
@@ -45,18 +47,49 @@ def test_pembagian_per_telapak_tidak_bocor(tmp_path):
     assert buat_pembagian(tmp_path) == p  # fixed seed = same split
 
 
-def test_roi_dengan_sudut_hitam_dari_luar_foto_dilewati(tmp_path, deteksi_tiruan, buat_foto_tongji, monkeypatch):
-    """When the hand fills the photo, the box reaches past the photo edge and the rotated photo is black there."""
-    import numpy as np
-    import palm
-    buat_foto_tongji(tmp_path / "asli", "session1", [1, 2])
-    asli = palm.ambil_roi
+def _tangan_lurus(tinggi_foto):
+    """A level hand in a 400 px wide photo: finger bases at y=300 (x 200 and 300), wrist below.
 
-    def roi_dengan_sudut_hitam(frame, lm):
-        roi = asli(frame, lm).copy()
-        roi[100:, :40] = 0  # about 7% of the ROI is padding
-        return roi
-    monkeypatch.setattr(palm, "ambil_roi", roi_dengan_sudut_hitam)
-    hasil = siapkan_roi(tmp_path / "asli", tmp_path / "roi", deteksi=deteksi_tiruan)
-    assert hasil["berhasil"] == 0 and hasil["gagal"] == ["session1/00001.bmp", "session1/00002.bmp"]
-    assert hasil["sudut_hitam"] == 2
+    The palm is 100 px wide, so the ROI box runs from y=315 to y=415. A photo of height 410 cuts
+    5% of the box off, height 385 cuts 30%.
+    """
+    from types import SimpleNamespace
+    titik = [SimpleNamespace(x=250 / 400, y=450 / tinggi_foto, z=0.0) for _ in range(21)]
+    titik[5] = SimpleNamespace(x=200 / 400, y=300 / tinggi_foto, z=0.0)
+    titik[17] = SimpleNamespace(x=300 / 400, y=300 / tinggi_foto, z=0.0)
+    foto = np.random.default_rng(0).integers(0, 256, (tinggi_foto, 400, 3), dtype=np.uint8)
+    return foto, titik
+
+
+def test_kotak_sedikit_keluar_foto_tetap_dipotong():
+    foto, titik = _tangan_lurus(410)
+    roi, luar = potong_roi(foto, titik)
+    assert roi.shape == (128, 128) and luar == pytest.approx(0.05, abs=0.02)
+    assert (roi == 0).mean() < 0.01  # the missing strip is mirrored from the photo, not black
+
+
+def test_kotak_banyak_keluar_foto_dilewati():
+    foto, titik = _tangan_lurus(385)
+    roi, luar = potong_roi(foto, titik)
+    assert roi is None and luar == pytest.approx(0.30, abs=0.02)
+
+
+def test_kotak_di_dalam_foto_tidak_ada_bagian_luar():
+    foto, titik = _tangan_lurus(600)
+    roi, luar = potong_roi(foto, titik)
+    assert roi.shape == (128, 128) and luar == 0.0
+    import palm
+    assert np.array_equal(roi, palm.ambil_roi(foto, titik))  # same crop as the app when the box fits
+
+
+def test_siapkan_roi_menghitung_kotak_keluar_foto(tmp_path, monkeypatch):
+    import training.data as data_mod
+    buat = tmp_path / "asli" / "session1"
+    buat.mkdir(parents=True)
+    foto_ok, titik_ok = _tangan_lurus(410)
+    foto_luar, titik_luar = _tangan_lurus(385)
+    cv2.imwrite(str(buat / "00001.png"), foto_ok)
+    cv2.imwrite(str(buat / "00002.png"), foto_luar)
+    hasil = siapkan_roi(tmp_path / "asli", tmp_path / "roi",
+                        deteksi=lambda f: (titik_ok if f.shape[0] == 410 else titik_luar, "Left"))
+    assert (hasil["berhasil"], hasil["gagal"], hasil["keluar_foto"]) == (1, ["session1/00002.png"], 1)
