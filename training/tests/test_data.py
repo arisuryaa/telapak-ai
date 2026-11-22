@@ -40,10 +40,13 @@ def test_pembagian_per_telapak_tidak_bocor(tmp_path):
     tulis_roi(tmp_path, "session1", range(201, 206))  # palm 20: only 5 photos in session1
     tulis_roi(tmp_path, "session2", range(201, 211))
     tulis_roi(tmp_path, "session1", range(211, 221))  # palm 21: nothing in session2
+    tulis_roi(tmp_path, "session2", [221])            # palm 22: a single ROI, too few to learn from
     p = buat_pembagian(tmp_path)
     semua = p["latih"] + p["validasi"] + p["uji"]
-    assert len(semua) == len(set(semua)) == 20 and 20 not in semua and 21 not in semua
-    assert (len(p["latih"]), len(p["validasi"]), len(p["uji"])) == (14, 2, 4)
+    assert len(semua) == len(set(semua)) == 22 and 22 not in semua
+    # incomplete palms cannot be enrolled and scanned, but still teach the model: they go to training only
+    assert 20 in p["latih"] and 21 in p["latih"]
+    assert (len(p["latih"]), len(p["validasi"]), len(p["uji"])) == (16, 2, 4)
     assert buat_pembagian(tmp_path) == p  # fixed seed = same split
 
 

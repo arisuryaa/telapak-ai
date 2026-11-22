@@ -131,13 +131,21 @@ def buat_pembagian(folder_roi, seed=42):
     """Split the palms 70/10/20 into training, validation and test. A palm is in exactly one group.
 
     Splitting by palm (not by photo) means the test palms are never seen during training, like a
-    new person who registers in the app.
+    new person who registers in the app. Only complete palms (see telapak_lengkap) can be enrolled and
+    scanned, so only they are split; palms with too few photos for that but at least 2 ROIs still teach
+    the model and are added to training.
     """
     ids = telapak_lengkap(folder_roi)
     random.Random(seed).shuffle(ids)
     n = len(ids)
     jumlah_uji, jumlah_validasi = round(0.2 * n), round(0.1 * n)
     uji, validasi, latih = ids[:jumlah_uji], ids[jumlah_uji:jumlah_uji + jumlah_validasi], ids[jumlah_uji + jumlah_validasi:]
+    jumlah_roi = {}
+    for sesi in SESI:
+        for t, daftar in roi_per_telapak(folder_roi, sesi).items():
+            jumlah_roi[t] = jumlah_roi.get(t, 0) + len(daftar)
+    lengkap = set(ids)
+    latih += [t for t, k in jumlah_roi.items() if t not in lengkap and k >= 2]
     return {"latih": sorted(latih), "validasi": sorted(validasi), "uji": sorted(uji)}
 
 
