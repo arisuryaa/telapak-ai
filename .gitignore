@@ -15,3 +15,8 @@ backend/data_uji/
 backend/gambar_canny/
 backend/gambar_kode/
 .superpowers
+
+# Telapak AI: dataset, trained model, Python environment
+data/
+model/
+.venv/
