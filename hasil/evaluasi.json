@@ -1,0 +1,37 @@
+{
+  "model_versi": "20261122-2131",
+  "validasi": {
+    "eer": 0.0233,
+    "rank1": 0.9119,
+    "batas": 0.6192,
+    "far_pada_batas": 0.0239,
+    "frr_pada_batas": 0.0227,
+    "jumlah_telapak": 43,
+    "jumlah_scan": 352,
+    "jumlah_pasangan_asli": 352,
+    "jumlah_pasangan_palsu": 14784
+  },
+  "uji": {
+    "eer": 0.0398,
+    "rank1": 0.8656,
+    "batas": 0.6192,
+    "far_pada_batas": 0.0357,
+    "frr_pada_batas": 0.0426,
+    "jumlah_telapak": 85,
+    "jumlah_scan": 774,
+    "jumlah_pasangan_asli": 774,
+    "jumlah_pasangan_palsu": 65016
+  },
+  "foto_sendiri": {
+    "tangan": [
+      "dewa_kanan",
+      "dewa_kiri"
+    ],
+    "jumlah_scan": 48,
+    "rank1": 0.9792,
+    "jarak_asli_rata": 0.3315,
+    "jarak_palsu_rata": 0.6734,
+    "far_pada_batas": 0.3333,
+    "frr_pada_batas": 0.0417
+  }
+}
