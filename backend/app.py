@@ -43,6 +43,16 @@ def _batas(nilai, pengaturan):
     return min(pengaturan["batas_maks"], max(pengaturan["batas_min"], b))
 
 
+def _isi_sampel(kode, metode):
+    """One sample in words for the log: how many of its 128x128 pixels carry each number."""
+    jumlah = np.bincount(kode.ravel(), minlength=NILAI_KODE_MAKS + 1)
+    if metode == "canny":
+        tepi = int(jumlah[1:].sum())
+        return (f"tepi {tepi} piksel ({100 * tepi / kode.size:.1f}%), per arah 1-6: "
+                + " ".join(str(int(n)) for n in jumlah[1:7]))
+    return "per arah 0-5: " + " ".join(str(int(n)) for n in jumlah[:6])
+
+
 def _decode_sampel(item):
     try:
         b = base64.b64decode(item, validate=True)
@@ -115,11 +125,15 @@ def create_app(database_url=None, deteksi=palm.deteksi_tangan, roi_skala=None, m
                      f"{roi_skala:g}×. Daftar ulang dulu.")
             hasil = {"status": "tidak_dikenal", "pesan": pesan}
         else:
-            jarak = sorted(
-                ({"telapak_id": g["telapak_id"], "orang_id": g["orang_id"], "nama": g["nama"],
-                  "sisi": g["sisi"], "jarak": float(metode_mod.jarak_ke_orang(metode, a.kode, g["kode"]))}
-                 for g in galeri),
-                key=lambda d: d["jarak"])
+            jarak = []
+            for g in galeri:
+                per_sampel = metode_mod.jarak_per_sampel(metode, a.kode, g["kode"])
+                # a hand's distance is its closest sample, so one good enrolment photo is enough
+                jarak.append({"telapak_id": g["telapak_id"], "orang_id": g["orang_id"], "nama": g["nama"],
+                              "sisi": g["sisi"], "jarak": float(min(per_sampel))})
+                log.info("dibandingkan: %s (%s) jarak=%.3f, per sampel: %s", g["nama"], g["sisi"], min(per_sampel),
+                         " ".join(f"{d:.3f}" for d in per_sampel))
+            jarak.sort(key=lambda d: d["jarak"])
             terdekat = jarak[0]
             if terdekat["jarak"] < batas:
                 hasil = {"status": "dikenali", "pesan": f"Dikenali sebagai {terdekat['nama']}",
@@ -199,7 +213,10 @@ def create_app(database_url=None, deteksi=palm.deteksi_tangan, roi_skala=None, m
                 return _galat(f"Tangan {sisi} sudah terdaftar. Ganti data lama?", 409,
                               perlu_konfirmasi=True)
             s.commit()
-            log.info("tersimpan: orang_id=%s sisi=%s ganti=%s", orang_id, sisi, ganti)
+            log.info("tersimpan: orang_id=%s sisi=%s ganti=%s metode=%s kotak=%gx, %d byte = %d sampel x 128x128",
+                     orang_id, sisi, ganti, metode, roi_skala, kode.nbytes, len(kode))
+            for i, k in enumerate(kode, 1):
+                log.info("  isi sampel %d: %s", i, _isi_sampel(k, metode))
             return jsonify({"orang": ambil_orang(s, orang_id)}), 201
 
     @app.get("/api/orang")

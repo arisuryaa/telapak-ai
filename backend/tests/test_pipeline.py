@@ -104,6 +104,8 @@ def test_analisis_canny_menghasilkan_peta_arah_dan_dicatat(caplog):
     ls = susun_langkah(a, jarak=[], batas=0.75)
     assert [l["no"] for l in ls] == [1, 2, 3, 4, 5, 6, 7, 8]
     assert [l["judul"] for l in ls[5:7]] == ["Canny: blur dan gradien", "Tepi Canny dan arahnya"]
+    # Canny numbers the directions by the angle of the line from horizontal, not by Gabor filter angles
+    assert [d["arah"] for d in ls[6]["legenda"]] == ["0-30°", "30-60°", "60-90°", "90-120°", "120-150°", "150-180°"]
     assert all(g["src"].startswith("data:image/") for l in ls for g in l["gambar"])
 
 

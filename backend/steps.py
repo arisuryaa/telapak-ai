@@ -143,13 +143,14 @@ def susun_langkah(a, jarak=None, batas=None):
                 "no": 7, "judul": "Tepi Canny dan arahnya",
                 "penjelasan": ("Canny menipiskan tepi menjadi garis setebal satu piksel, lalu memilih tepi yang kuat dengan "
                                "dua ambang (ambang rendah hanya dipakai jika tersambung ke tepi yang kuat). Setiap piksel "
-                               "tepi diberi warna menurut arah garisnya (6 arah, sama seperti Gabor). Peta arah inilah yang "
+                               "tepi diberi warna menurut sudut garisnya dari garis mendatar, berputar searah jarum jam "
+                               "(6 kelompok, 30° per kelompok). Peta arah inilah yang "
                                "disimpan dan dicocokkan."),
                 "gambar": [{"label": "Tepi Canny", "src": ke_data_url(kd["tepi"] * 255)},
                            {"label": "Arah tepi", "src": ke_data_url(peta)}],
                 "angka": {"ambang tinggi": round(kd["ambang_tinggi"], 1), "ambang rendah": round(kd["ambang_rendah"], 1),
                           "piksel tepi": jumlah_tepi, "kepadatan tepi": f"{100 * jumlah_tepi / kode.size:.1f}%"},
-                "legenda": legenda,
+                "legenda": [{"arah": f"{30 * j}-{30 * j + 30}°", "warna": WARNA_KODE[j]} for j in range(6)],
             })
         else:
             respons = a.kode_detail["respons"]

@@ -13,4 +13,5 @@ frontend/public/mediapipe/
 registered_data/
 backend/data_uji/
 backend/gambar_canny/
+backend/gambar_kode/
 .superpowers

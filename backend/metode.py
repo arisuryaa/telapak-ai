@@ -45,8 +45,13 @@ def hitung_kode_detail(metode, roi_gray):
     return palm.hitung_kode_detail(roi_gray)
 
 
+def jarak_per_sampel(metode, kode, daftar_kode):
+    """Distance from a scan to each enrolled sample of one hand, in order (0 = identical)."""
+    if periksa(metode) == "canny":
+        return canny.jarak_per_sampel_arah(kode, daftar_kode)
+    return [palm.jarak_kode(kode, k) for k in daftar_kode]
+
+
 def jarak_ke_orang(metode, kode, daftar_kode):
     """Distance from a scan to one hand: the distance to its closest enrolled sample."""
-    if periksa(metode) == "canny":
-        return canny.jarak_ke_orang_arah(kode, daftar_kode)
-    return palm.jarak_ke_orang(kode, daftar_kode)
+    return min(jarak_per_sampel(metode, kode, daftar_kode))

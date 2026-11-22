@@ -127,7 +127,12 @@ def test_api_mencatat_log(client, caplog):
         client.post("/api/orang", json=body_daftar(s["kode"], umur=0))
     assert "sampel: diterima, sisi=kanan" in caplog.text
     assert "tersimpan: orang_id=1 sisi=kanan" in caplog.text
+    # what went into the database: size, then one line per sample saying how many pixels carry each number
+    assert "131072 byte = 8 sampel x 128x128" in caplog.text
+    assert caplog.text.count("isi sampel ") == 8
     assert "scan: dikenali, terdekat dewa (kanan) jarak=0.000" in caplog.text
+    # every hand the scan was compared with, with its distance to each of the 8 samples
+    assert "dibandingkan: dewa (kanan) jarak=0.000, per sampel: 0.000 0.000" in caplog.text
     assert "POST /api/orang -> 400: Umur harus angka" in caplog.text
 
 

@@ -165,7 +165,12 @@ def jarak_tepi_arah(a, b, geser=3, toleransi=TOLERANSI, selisih=1, sa=None, sb=N
     return terbaik
 
 
+def jarak_per_sampel_arah(peta, daftar_peta, toleransi=TOLERANSI, selisih=1):
+    """Distance from a scan to each enrolled direction map, in order."""
+    sa = _dekat_searah(peta, toleransi, selisih)  # the scan is the same in every comparison
+    return [jarak_tepi_arah(peta, p, toleransi=toleransi, selisih=selisih, sa=sa) for p in daftar_peta]
+
+
 def jarak_ke_orang_arah(peta, daftar_peta, toleransi=TOLERANSI, selisih=1):
     """Distance to one hand = distance to its closest enrolled direction map."""
-    sa = _dekat_searah(peta, toleransi, selisih)  # the scan is the same in every comparison
-    return min(jarak_tepi_arah(peta, p, toleransi=toleransi, selisih=selisih, sa=sa) for p in daftar_peta)
+    return min(jarak_per_sampel_arah(peta, daftar_peta, toleransi, selisih))
