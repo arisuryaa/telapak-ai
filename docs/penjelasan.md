@@ -63,7 +63,7 @@ Telapak AI mengenali seseorang dari **garis telapak tangannya** lewat webcam. Pr
 ### 3.4 Cara model belajar: ArcFace
 
 `backend/model.py`, kelas `ArcFace`
-Selama training saja, di atas embedding dipasang lapisan **ArcFace** yang membuat model menebak "ini telapak nomor berapa" (dari 420 telapak data latih). ArcFace memberi **margin**: tebakan yang benar baru dianggap cukup kalau embedding-nya sangat dekat dengan pusat kelompok telapaknya. Akibatnya, embedding dari telapak yang sama berkumpul rapat, dan telapak yang berbeda saling menjauh.
+Selama training saja, di atas embedding dipasang lapisan **ArcFace** yang membuat model menebak "ini telapak nomor berapa" (dari 460 telapak data latih). ArcFace memberi **margin**: tebakan yang benar baru dianggap cukup kalau embedding-nya sangat dekat dengan pusat kelompok telapaknya. Akibatnya, embedding dari telapak yang sama berkumpul rapat, dan telapak yang berbeda saling menjauh.
 
 **Setelah training, kepala ArcFace dibuang.** Aplikasi hanya memakai embedding. Karena itu **orang baru bisa mendaftar tanpa melatih ulang model**. Model tidak menghafal daftar orang, tetapi sudah belajar *cara* membedakan telapak, mirip sistem pengenalan wajah di ponsel.
 
@@ -84,9 +84,11 @@ Selama training saja, di atas embedding dipasang lapisan **ArcFace** yang membua
 
 | Kelompok | Porsi | Dipakai untuk |
 |---|---|---|
-| Latih | 70% (420 telapak) | Menyetel bobot model |
-| Validasi | 10% (60 telapak) | Memilih epoch terbaik dan menentukan **batas** |
-| Uji | 20% (120 telapak) | **Angka akhir di laporan**. Tidak pernah dilihat model saat training |
+| Latih | 70% dari telapak lengkap (298) + 162 telapak tidak lengkap = **460 telapak** | Menyetel bobot model |
+| Validasi | 10% (**43 telapak**) | Memilih epoch terbaik dan menentukan **batas** |
+| Uji | 20% (**85 telapak**) | **Angka akhir di laporan**. Tidak pernah dilihat model saat training |
+
+Telapak "lengkap" adalah telapak yang punya ≥8 ROI di sesi 1 (untuk pendaftaran) dan ada ROI di sesi 2 (untuk scan). Hanya telapak lengkap yang bisa dipakai untuk menguji, sehingga validasi dan uji hanya diambil dari 426 telapak lengkap. Telapak yang tidak lengkap tetap berguna untuk belajar, jadi hanya dimasukkan ke data latih.
 
 Kenapa per telapak? Kalau foto dari telapak yang sama ada di data latih *dan* data uji, model cukup "mengingat" telapak itu dan akurasinya akan terlihat tinggi palsu. Ini disebut **kebocoran data** (*data leakage*). Dengan pembagian per telapak, telapak uji berperan seperti orang baru yang mendaftar di aplikasi.
 
@@ -139,11 +141,11 @@ Histogram jarak menunjukkan dua gunung yang hampir terpisah: pasangan telapak ya
 |---|---|
 | Rank-1 | **97,9%** (47 dari 48 scan cocok dengan tangan yang benar) |
 | Jarak rata-rata tangan sama / tangan lain | 0,33 / 0,67 |
-| EER | 10,4% (pada batas 0,51) |
-| Pada batas 0,50 | FAR 6%, FRR 12% |
-| Pada batas model 0,62 | FAR 35%, FRR 4% |
+| Pada batas model 0,619 (`hasil/evaluasi.json`) | FAR 33,3%, FRR 4,2% |
+| EER (dihitung dengan menyapu batas pada jarak yang sama) | 10,4% (pada batas 0,51) |
+| Pada batas 0,50 (sapuan yang sama) | FAR 6%, FRR 12% |
 
-Hasil di webcam lebih buruk daripada di Tongji. Penyebabnya, model hanya dilatih dengan foto Tongji (kamera industri, lampu tetap), sedangkan webcam memiliki kamera, lampu, dan resolusi yang berbeda. Fenomena ini disebut *domain shift*. Selain itu, tangan kiri dan kanan orang yang sama lebih mirip satu sama lain daripada telapak orang yang berbeda. Untuk demo di webcam, batas di halaman Scan sebaiknya digeser ke sekitar **0,50**.
+Hasil di webcam lebih buruk daripada di Tongji. Penyebabnya, model hanya dilatih dengan foto Tongji (kamera industri, lampu tetap), sedangkan webcam memiliki kamera, lampu, dan resolusi yang berbeda. Fenomena ini disebut *domain shift*. Selain itu, tangan kiri dan kanan orang yang sama lebih mirip satu sama lain daripada telapak orang yang berbeda. Karena itu, batas bawaan aplikasi diatur ke **0,50** lewat `BATAS=0.50` di `backend/.env`. Batas 0,619 dari model tetap tersimpan di file model; mengosongkan `BATAS` akan memakainya lagi.
 
 ---
 
@@ -158,7 +160,7 @@ Hasil di webcam lebih buruk daripada di Tongji. Penyebabnya, model hanya dilatih
 ## 7. Pertanyaan yang mungkin diajukan dosen
 
 **Apa yang Anda latih sendiri?**
-Model ResNet18 yang mengubah gambar telapak menjadi 128 angka. Saya melatihnya (fine-tuning) dengan 420 telapak dataset Tongji memakai loss ArcFace. MediaPipe tidak saya latih, karena hanya dipakai untuk menemukan tangan.
+Model ResNet18 yang mengubah gambar telapak menjadi 128 angka. Saya melatihnya (fine-tuning) dengan 460 telapak dataset Tongji (7.230 foto) memakai loss ArcFace. MediaPipe tidak saya latih, karena hanya dipakai untuk menemukan tangan.
 
 **Kenapa tidak dilatih dari nol?**
 Data telapak terbatas. Model dari nol butuh jauh lebih banyak data dan waktu. Pretrained ImageNet sudah mengerti garis dan tekstur, jadi tinggal diajari membedakan telapak.

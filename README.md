@@ -78,7 +78,7 @@ Database `telapak_ai` dibuat otomatis. Kalau MySQL mati atau model belum ada, ba
 
 | Halaman | Isi |
 |---|---|
-| **Scan** (`/`) | Kamera dengan kerangka tangan dan kotak telapak. Foto diambil otomatis saat semua syarat terpenuhi. Slider batas mengatur ambang kecocokan (untuk webcam sekitar 0,50). |
+| **Scan** (`/`) | Kamera dengan kerangka tangan dan kotak telapak. Foto diambil otomatis saat semua syarat terpenuhi. Slider batas mengatur ambang kecocokan. Bawaannya 0,50 dari `BATAS` di `backend/.env`; kosongkan untuk memakai batas model (0,619). |
 | **Hasil** (`/hasil`) | 8 langkah pemrosesan dengan gambar, lalu hasil: dikenali, tidak dikenal, atau gagal. |
 | **Daftar** (`/daftar`) | Data diri, sisi tangan, persetujuan, lalu 8 sampel dari kamera. |
 | **Data terdaftar** (`/data`) | Daftar orang dan versi model setiap tangan; bisa dihapus. |
