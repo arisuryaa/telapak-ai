@@ -75,6 +75,9 @@ def create_app(database_url=None, deteksi=palm.deteksi_tangan, pengenal=None):
         from model import Pengenal  # torch is only loaded when the real model is used
         pengenal = Pengenal.dari_file(MODEL_PATH)
     batas_bawaan = BATAS_CADANGAN if pengenal.batas is None else round(float(pengenal.batas), 4)
+    if os.environ.get("BATAS"):
+        # The model's threshold is picked on Tongji photos; a webcam usually needs a stricter one.
+        batas_bawaan = _batas(os.environ["BATAS"], batas_bawaan)
     versi = pengenal.versi
 
     app = Flask(__name__)

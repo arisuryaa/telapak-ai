@@ -197,3 +197,11 @@ def test_tanpa_file_model_pesan_jelas(monkeypatch, tmp_path):
     monkeypatch.setattr(app_mod, "MODEL_PATH", tmp_path / "tidak_ada.pt")
     with pytest.raises(FileNotFoundError, match="Jalankan training dulu"):
         create_app("sqlite://", deteksi=detektor_palsu)
+
+
+def test_batas_dari_env_menimpa_batas_model(monkeypatch):
+    # the model's threshold comes from Tongji photos; a webcam may need a stricter one
+    monkeypatch.setenv("BATAS", "0.5")
+    c = create_app("sqlite://", deteksi=detektor_palsu, pengenal=PengenalPalsu(batas=0.62)).test_client()
+    assert c.get("/api/pengaturan").get_json()["batas_default"] == 0.5
+    assert c.post("/api/scan", json={"frame": FRAME}).get_json()["batas"] == 0.5
