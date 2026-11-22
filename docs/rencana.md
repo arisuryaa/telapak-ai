@@ -20,7 +20,7 @@
 - Pembagian per telapak: 70% latih / 10% validasi / 20% uji, seed 42, disimpan di `data/pembagian.json`. Satu telapak hanya ada di satu kelompok.
 - Embedding 128 angka dengan panjang 1. Jarak = 1 − kosinus. Batas dipilih di data **validasi** (titik EER), lalu dilaporkan di data **uji**.
 - Teks yang dilihat pengguna memakai bahasa Indonesia. Nama fungsi mengikuti gaya proyek (bahasa Indonesia).
-- Commit di akhir setiap tugas, dengan baris `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Commit di akhir setiap tugas, tanpa baris Co-Authored-By (permintaan pemilik).
 
 ## Review Focus
 
