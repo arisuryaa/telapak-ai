@@ -1,0 +1,399 @@
+openapi: 3.0.3
+info:
+  title: Telapak AI API
+  version: 1.0.0
+  description: |
+    API untuk mendaftarkan telapak tangan dan mengenali pemiliknya.
+
+    Alur singkat:
+    1. **Daftar**: kirim 8 foto satu per satu ke `POST /api/sampel`, kumpulkan `embedding`-nya,
+       lalu simpan bersama data diri lewat `POST /api/orang`.
+    2. **Scan**: kirim satu foto ke `POST /api/scan`. Server membandingkan embedding foto itu
+       dengan semua tangan terdaftar dan menjawab siapa pemiliknya.
+
+    Embedding dibuat oleh model di `backend/model.py`. Selama model belum dibuat,
+    `/api/sampel` dan `/api/scan` berhenti setelah tahap potong ROI.
+servers:
+  - url: http://127.0.0.1:5000
+    description: Backend lokal
+
+tags:
+  - name: Pengaturan
+  - name: Pengenalan
+    description: Memproses foto dari kamera
+  - name: Orang
+    description: Data orang dan tangan yang terdaftar
+
+paths:
+  /api/pengaturan:
+    get:
+      tags: [Pengaturan]
+      summary: Status model dan batas bawaan slider
+      responses:
+        "200":
+          description: Pengaturan aplikasi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Pengaturan"
+
+  /api/sampel:
+    post:
+      tags: [Pengenalan]
+      summary: Proses satu foto sampel untuk pendaftaran
+      description: |
+        Mendeteksi tangan, mengecek syaratnya, memotong ROI, lalu membuat embedding.
+        Foto tidak disimpan. Kalau foto ditolak, `valid` bernilai false dan `pesan` berisi alasannya.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/KirimFoto"
+      responses:
+        "200":
+          description: Hasil pemrosesan sampel
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HasilSampel"
+        "400":
+          $ref: "#/components/responses/Galat"
+
+  /api/scan:
+    post:
+      tags: [Pengenalan]
+      summary: Kenali pemilik telapak dari satu foto
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/KirimFoto"
+                - type: object
+                  properties:
+                    batas:
+                      type: number
+                      description: Batas kecocokan (0.05–1.0). Kosong = batas bawaan.
+                      example: 0.5
+      responses:
+        "200":
+          description: Hasil scan, termasuk langkah-langkah pemrosesan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HasilScan"
+        "400":
+          $ref: "#/components/responses/Galat"
+
+  /api/orang:
+    get:
+      tags: [Orang]
+      summary: Daftar semua orang terdaftar
+      responses:
+        "200":
+          description: Daftar orang, urut nama
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Orang"
+    post:
+      tags: [Orang]
+      summary: Simpan tangan seseorang (orang baru atau orang yang sudah ada)
+      description: |
+        Untuk orang baru isi `nama`, `umur`, dan `status`. Untuk menambah tangan ke orang yang
+        sudah ada, isi `orang_id` saja. Kalau tangan itu sudah terdaftar, server membalas 409
+        kecuali `ganti` bernilai true.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimpanOrang"
+      responses:
+        "201":
+          description: Tersimpan
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orang:
+                    $ref: "#/components/schemas/Orang"
+        "400":
+          $ref: "#/components/responses/Galat"
+        "404":
+          $ref: "#/components/responses/Galat"
+        "409":
+          description: Tangan ini sudah terdaftar. Kirim ulang dengan `ganti` = true untuk menggantinya.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pesan:
+                    type: string
+                    example: Tangan kanan sudah terdaftar. Ganti data lama?
+                  perlu_konfirmasi:
+                    type: boolean
+                    example: true
+    delete:
+      tags: [Orang]
+      summary: Hapus semua orang dan tangannya
+      responses:
+        "200":
+          description: Jumlah orang yang dihapus
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  dihapus:
+                    type: integer
+                    example: 3
+
+  /api/orang/{orang_id}:
+    parameters:
+      - name: orang_id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      tags: [Orang]
+      summary: Detail satu orang
+      responses:
+        "200":
+          description: Data orang
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Orang"
+        "404":
+          $ref: "#/components/responses/Galat"
+    delete:
+      tags: [Orang]
+      summary: Hapus satu orang beserta tangannya
+      responses:
+        "204":
+          description: Terhapus
+        "404":
+          $ref: "#/components/responses/Galat"
+
+components:
+  responses:
+    Galat:
+      description: Permintaan ditolak. `pesan` berisi alasannya dalam bahasa Indonesia.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              pesan:
+                type: string
+                example: Foto tidak valid
+
+  schemas:
+    Pengaturan:
+      type: object
+      properties:
+        model:
+          type: string
+          nullable: true
+          description: Nama model. null kalau model belum dibuat.
+          example: null
+        model_siap:
+          type: boolean
+          example: false
+        jumlah_sampel:
+          type: integer
+          example: 8
+        batas_bawaan:
+          type: number
+          example: 0.5
+        batas_min:
+          type: number
+          example: 0.05
+        batas_maks:
+          type: number
+          example: 1.0
+
+    KirimFoto:
+      type: object
+      required: [foto]
+      properties:
+        foto:
+          type: string
+          description: Foto JPEG/PNG sebagai data URL base64 (tidak dicerminkan).
+          example: data:image/jpeg;base64,/9j/4AAQSkZJRg...
+
+    Embedding:
+      type: array
+      description: Daftar angka hasil model untuk satu foto.
+      items:
+        type: number
+      example: [0.12, -0.05, 0.31]
+
+    HasilSampel:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        pesan:
+          type: string
+          example: Sampel diterima
+        sisi:
+          type: string
+          nullable: true
+          enum: [kiri, kanan]
+        embedding:
+          allOf:
+            - $ref: "#/components/schemas/Embedding"
+          nullable: true
+
+    Jarak:
+      type: object
+      description: Jarak scan ke satu tangan terdaftar (0 = sama persis).
+      properties:
+        tangan_id:
+          type: integer
+        orang_id:
+          type: integer
+        nama:
+          type: string
+          example: Ayu Lestari
+        sisi:
+          type: string
+          enum: [kiri, kanan]
+        jarak:
+          type: number
+          example: 0.31
+
+    Langkah:
+      type: object
+      description: Satu kartu langkah pemrosesan untuk halaman Hasil.
+      properties:
+        no:
+          type: integer
+          example: 1
+        judul:
+          type: string
+          example: Foto dari kamera
+        penjelasan:
+          type: string
+        gambar:
+          type: array
+          items:
+            type: object
+            properties:
+              label:
+                type: string
+              src:
+                type: string
+                description: Gambar sebagai data URL
+        angka:
+          type: object
+          additionalProperties: true
+          example: { resolusi: 1280×720 }
+        jarak:
+          type: array
+          description: Hanya ada di langkah Pencocokan.
+          items:
+            $ref: "#/components/schemas/Jarak"
+
+    HasilScan:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [dikenali, tidak_dikenal, gagal]
+        pesan:
+          type: string
+          example: Dikenali sebagai Ayu Lestari
+        terdekat:
+          allOf:
+            - $ref: "#/components/schemas/Jarak"
+          nullable: true
+        batas:
+          type: number
+          example: 0.5
+        jarak:
+          type: array
+          description: Jarak ke setiap tangan terdaftar, urut dari yang paling mirip.
+          items:
+            $ref: "#/components/schemas/Jarak"
+        langkah:
+          type: array
+          items:
+            $ref: "#/components/schemas/Langkah"
+
+    SimpanOrang:
+      type: object
+      required: [sisi, persetujuan, embedding]
+      properties:
+        orang_id:
+          type: integer
+          description: Isi untuk menambah tangan ke orang yang sudah ada.
+        nama:
+          type: string
+          maxLength: 100
+          example: Ayu Lestari
+        umur:
+          type: integer
+          minimum: 1
+          maximum: 120
+          example: 21
+        status:
+          type: string
+          enum: [mahasiswa, dosen, staf, tamu]
+        sisi:
+          type: string
+          enum: [kiri, kanan]
+        persetujuan:
+          type: boolean
+          description: Harus true.
+          example: true
+        ganti:
+          type: boolean
+          description: true untuk mengganti tangan yang sudah terdaftar.
+          default: false
+        embedding:
+          type: array
+          description: Tepat 8 embedding (satu per foto sampel), panjangnya harus sama.
+          minItems: 8
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/Embedding"
+
+    Orang:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        nama:
+          type: string
+          example: Ayu Lestari
+        umur:
+          type: integer
+          example: 21
+        status:
+          type: string
+          enum: [mahasiswa, dosen, staf, tamu]
+        tangan:
+          type: array
+          items:
+            type: object
+            properties:
+              sisi:
+                type: string
+                enum: [kiri, kanan]
+              model:
+                type: string
+                example: resnet18-v1
+        dibuat_pada:
+          type: string
+          format: date-time

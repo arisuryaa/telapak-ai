@@ -1,6 +1,7 @@
 """app.py - API Flask untuk Telapak AI.
 
-Jalankan:  python app.py   lalu buka http://127.0.0.1:5000
+Jalankan:  python app.py
+Dokumentasi API (Swagger UI): http://127.0.0.1:5000/api/docs
 """
 
 import math
@@ -8,7 +9,7 @@ import os
 import sys
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from sqlalchemy.orm import Session
 
 import db
@@ -21,6 +22,22 @@ JUMLAH_SAMPEL = 8  # foto yang diambil saat mendaftarkan satu tangan
 BATAS_MIN = 0.05
 BATAS_MAKS = 1.0
 DATABASE_BAWAAN = "mysql+pymysql://root:@localhost:3306/telapak_ai"
+FOLDER_BACKEND = os.path.dirname(os.path.abspath(__file__))
+
+# Halaman Swagger UI yang membaca openapi.yaml. Swagger UI dimuat dari CDN.
+HALAMAN_DOCS = """<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <title>Telapak AI API</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui.css">
+</head>
+<body>
+  <div id="swagger-ui"></div>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.17.14/swagger-ui-bundle.js"></script>
+  <script>SwaggerUIBundle({ url: "/api/openapi.yaml", dom_id: "#swagger-ui" });</script>
+</body>
+</html>"""
 
 
 def galat(pesan, status=400, **tambahan):
@@ -53,12 +70,20 @@ def embedding_valid(embedding):
 
 
 def create_app(database_url=None):
-    load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
+    load_dotenv(os.path.join(FOLDER_BACKEND, ".env"))
     database_url = database_url or os.environ.get("DATABASE_URL", DATABASE_BAWAAN)
     batas_bawaan = baca_batas(os.environ.get("BATAS"), 0.5)
 
     app = Flask(__name__)
     engine = db.buat_engine(database_url)
+
+    @app.get("/api/docs")
+    def docs():
+        return HALAMAN_DOCS
+
+    @app.get("/api/openapi.yaml")
+    def openapi():
+        return send_from_directory(FOLDER_BACKEND, "openapi.yaml", mimetype="text/yaml")
 
     @app.get("/api/pengaturan")
     def pengaturan():
