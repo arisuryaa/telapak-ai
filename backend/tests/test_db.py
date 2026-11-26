@@ -1,93 +1,50 @@
-import numpy as np
 import pytest
 from sqlalchemy.orm import Session
 
-from db import (DatabaseTidakTersedia, TelapakSudahAda, ambil_orang, buat_engine,
-                hapus_orang, hapus_semua, muat_galeri, simpan_telapak, tambah_orang)
+import db
 
-KODE = np.random.default_rng(0).normal(size=(8, 128)).astype(np.float32)
+EMBEDDING = [[0.1, -0.2, 0.3]] * 8
 
 
 @pytest.fixture
 def s():
-    engine = buat_engine("sqlite://")
-    with Session(engine) as sess:
-        yield sess
+    engine = db.buat_engine("sqlite://")
+    with Session(engine) as sesi:
+        yield sesi
 
 
-def test_simpan_muat_kode_utuh(s):
-    o = tambah_orang(s, "dewa", 21, "mahasiswa")
-    simpan_telapak(s, o.id, "kanan", KODE)
-    s.commit()
-    g = muat_galeri(s)
-    assert len(g) == 1 and g[0]["sisi"] == "kanan" and g[0]["nama"] == "dewa"
-    assert np.array_equal(g[0]["kode"], KODE)
-
-
-def test_duplikat_dan_ganti(s):
-    o = tambah_orang(s, "dewa", 21, "mahasiswa")
-    simpan_telapak(s, o.id, "kanan", KODE)
-    with pytest.raises(TelapakSudahAda):
-        simpan_telapak(s, o.id, "kanan", KODE)
-    baru = np.zeros_like(KODE)
-    simpan_telapak(s, o.id, "kanan", baru, ganti=True)
-    s.commit()
-    assert np.array_equal(muat_galeri(s)[0]["kode"], baru)
-
-
-def test_dua_tangan_satu_orang(s):
-    o = tambah_orang(s, "dewa", 21, "mahasiswa")
-    simpan_telapak(s, o.id, "kiri", KODE)
-    simpan_telapak(s, o.id, "kanan", KODE)
-    s.commit()
-    assert ambil_orang(s, o.id)["tangan"] == ["kanan", "kiri"]
-
-
-def test_hapus_kaskade(s):
-    o = tambah_orang(s, "dewa", 21, "mahasiswa")
-    simpan_telapak(s, o.id, "kanan", KODE)
-    tambah_orang(s, "budi", 30, "dosen")
-    s.commit()
-    assert hapus_orang(s, o.id) is True
-    s.commit()
-    assert muat_galeri(s) == []
-    assert hapus_semua(s) == 1
+def test_simpan_lalu_baca(s):
+    orang = db.tambah_orang(s, "dewa", 21, "mahasiswa")
+    db.simpan_tangan(s, orang.id, "kanan", EMBEDDING, "model-a")
     s.commit()
 
-
-def test_engine_mysql_mati():
-    with pytest.raises(DatabaseTidakTersedia, match="Laragon"):
-        buat_engine("mysql+pymysql://root:@127.0.0.1:1/telapak_id")
-
-
-def test_url_server_tanpa_database():
-    from sqlalchemy.engine import make_url
-    from db import _url_server
-    u = _url_server(make_url("mysql+pymysql://root:@localhost:3306/telapak_id"))
-    assert u.database is None
-    assert (u.host, u.port, u.username) == ("localhost", 3306, "root")
+    semua = db.semua_tangan(s, "model-a")
+    assert len(semua) == 1
+    assert semua[0]["nama"] == "dewa" and semua[0]["embedding"] == EMBEDDING
+    assert db.semua_tangan(s, "model-b") == []
 
 
-def test_pesan_galat_menyertakan_detail():
-    with pytest.raises(DatabaseTidakTersedia, match="Detail:"):
-        buat_engine("mysql+pymysql://root:@127.0.0.1:1/telapak_id")
-
-
-def test_kode_float32_8x128(s):
-    o = tambah_orang(s, "dewa", 21, "mahasiswa")
-    t = simpan_telapak(s, o.id, "kanan", KODE, model_versi="v1")
+def test_simpan_lagi_mengganti_data_lama(s):
+    orang = db.tambah_orang(s, "dewa", 21, "mahasiswa")
+    db.simpan_tangan(s, orang.id, "kanan", EMBEDDING, "model-a")
+    db.simpan_tangan(s, orang.id, "kanan", [[1.0]] * 8, "model-b")
     s.commit()
-    assert len(t.kode) == 8 * 128 * 4
-    g = muat_galeri(s)[0]
-    assert g["kode"].dtype == np.float32 and g["kode"].shape == (8, 128)
+    assert db.ambil_orang(s, orang.id)["tangan"] == [{"sisi": "kanan", "model": "model-b"}]
 
 
-def test_versi_model_tersimpan_dan_diganti(s):
-    o = tambah_orang(s, "dewa", 21, "mahasiswa")
-    simpan_telapak(s, o.id, "kanan", KODE, model_versi="v1")
+def test_hapus(s):
+    a = db.tambah_orang(s, "ayu", 20, "dosen")
+    db.tambah_orang(s, "budi", 22, "staf")
+    db.simpan_tangan(s, a.id, "kiri", EMBEDDING, "model-a")
     s.commit()
-    assert muat_galeri(s)[0]["model_versi"] == "v1"
-    simpan_telapak(s, o.id, "kanan", KODE, ganti=True, model_versi="v2")
+
+    assert db.hapus_orang(s, a.id) is True
+    assert db.hapus_orang(s, 999) is False
     s.commit()
-    assert muat_galeri(s)[0]["model_versi"] == "v2"
-    assert ambil_orang(s, o.id)["versi_tangan"] == {"kanan": "v2"}
+    assert db.semua_tangan(s, "model-a") == []  # tangan ikut terhapus
+    assert db.hapus_semua(s) == 1
+
+
+def test_mysql_mati_pesan_jelas():
+    with pytest.raises(db.DatabaseTidakTersedia, match="Nyalakan MySQL"):
+        db.buat_engine("mysql+pymysql://root:@127.0.0.1:1/tidak_ada")

@@ -1,77 +1,69 @@
-"""validation.py - hand rules checked on the server: open fingers, palm facing, side, ROI quality."""
+"""validation.py - aturan tangan yang dicek di server sebelum foto dipakai.
+
+Aturan yang sama juga dicek di browser (frontend/src/lib/validation.js).
+"""
+
 import cv2
 import numpy as np
 
-import palm
+from palm import ke_piksel, pertegas_kontras
 
-# terpotong_maks: largest share of ROI pixels clipped to white (>= 250) before the
-# palm lines are considered washed out. Bright but unclipped palms still have lines.
-AMBANG = {"rasio_jari": 1.1, "rasio_jempol": 0.7,
-          "terang_min": 40, "terpotong_maks": 0.4, "tajam_min": 20.0}
+RASIO_JARI = 1.1  # ujung jari harus lebih jauh dari pergelangan daripada ruas tengahnya
+RASIO_JEMPOL = 0.7  # jempol harus cukup jauh dari pangkal telunjuk
+TERANG_MIN = 40  # rata-rata kecerahan ROI minimal (0..255)
+PUTIH_MAKS = 0.4  # bagian ROI yang putih total (>= 250) maksimal 40%
+TAJAM_MIN = 20.0  # ketajaman minimal (variansi Laplacian setelah CLAHE)
 
-# (fingertip, PIP joint) for index, middle, ring, little finger
+# (ujung jari, ruas tengah) untuk telunjuk, tengah, manis, kelingking
 PASANGAN_JARI = [(8, 6), (12, 10), (16, 14), (20, 18)]
 
 
-def _px(lm, i, w, h):
-    return np.array([lm[i].x * w, lm[i].y * h])
-
-
-# The legacy mp.solutions Hands API assumes a mirrored (selfie) image. Frames sent
-# by the browser are unmirrored, so a real right hand is reported as "Left".
-# The browser uses MediaPipe Tasks, which labels the real hand (see validation.js).
-LABEL_KANAN = "Left"
-
-
 def sisi_dari_label(label):
-    """Map MediaPipe's label on the unmirrored frame to the hand's side."""
-    return "kanan" if label == LABEL_KANAN else "kiri"
+    """Ubah label MediaPipe menjadi "kanan" atau "kiri".
 
-
-def silang_telapak(lm, w, h):
-    """Cross product of wrist->index base and wrist->little base (image y points down).
-    Its sign, together with the hand side, tells palm from back of hand."""
-    p0 = _px(lm, 0, w, h)
-    a = _px(lm, 5, w, h) - p0
-    b = _px(lm, 17, w, h) - p0
-    return float(a[0] * b[1] - a[1] * b[0])
-
-
-def jari_terbuka(lm, w, h):
-    """True only if all five fingers are extended."""
-    p0 = _px(lm, 0, w, h)
-    for ujung, pip in PASANGAN_JARI:
-        if np.linalg.norm(_px(lm, ujung, w, h) - p0) <= AMBANG["rasio_jari"] * np.linalg.norm(_px(lm, pip, w, h) - p0):
-            return False
-    jempol = np.linalg.norm(_px(lm, 4, w, h) - _px(lm, 5, w, h))
-    return jempol > AMBANG["rasio_jempol"] * np.linalg.norm(_px(lm, 5, w, h) - _px(lm, 17, w, h))
-
-
-def menghadap_kamera(lm, sisi, w, h):
-    """Palm faces the camera when the cross product of wrist->index and wrist->little
-    has the sign expected for that hand (image y points down)."""
-    z = silang_telapak(lm, w, h)
-    return z < 0 if sisi == "kanan" else z > 0
-
-
-def ukur_roi(roi):
-    """Return (mean brightness, sharpness).
-
-    Sharpness is the variance of the Laplacian measured after CLAHE, on the same
-    image the model sees. Raw palm skin is smooth (about 3-5 on a sharp
-    webcam photo), so measuring before CLAHE rejected good photos.
+    MediaPipe versi Python mengira fotonya dicerminkan (seperti kamera selfie), padahal foto dari
+    browser tidak dicerminkan. Akibatnya tangan kanan sungguhan dilaporkan sebagai "Left".
     """
-    tajam = cv2.Laplacian(palm.terapkan_clahe(roi), cv2.CV_64F).var()
-    return float(roi.mean()), float(tajam)
+    return "kanan" if label == "Left" else "kiri"
 
 
-def kualitas_roi(roi):
-    """Return None if the ROI is usable, otherwise the reason in Indonesian."""
-    terang, tajam = ukur_roi(roi)
-    if terang < AMBANG["terang_min"]:
+def jari_terbuka(titik, lebar, tinggi):
+    """True kalau kelima jari terbuka."""
+    pergelangan = ke_piksel(titik, 0, lebar, tinggi)
+    for ujung, ruas in PASANGAN_JARI:
+        jarak_ujung = np.linalg.norm(ke_piksel(titik, ujung, lebar, tinggi) - pergelangan)
+        jarak_ruas = np.linalg.norm(ke_piksel(titik, ruas, lebar, tinggi) - pergelangan)
+        if jarak_ujung <= RASIO_JARI * jarak_ruas:
+            return False
+
+    jempol = np.linalg.norm(
+        ke_piksel(titik, 4, lebar, tinggi) - ke_piksel(titik, 5, lebar, tinggi)
+    )
+    lebar_telapak = np.linalg.norm(
+        ke_piksel(titik, 5, lebar, tinggi) - ke_piksel(titik, 17, lebar, tinggi)
+    )
+    return jempol > RASIO_JEMPOL * lebar_telapak
+
+
+def menghadap_kamera(titik, sisi, lebar, tinggi):
+    """True kalau telapak (bukan punggung tangan) yang menghadap kamera.
+
+    Dihitung dari perkalian silang vektor pergelangan->telunjuk dan pergelangan->kelingking.
+    Tandanya (positif/negatif) berbeda untuk telapak dan punggung, dan terbalik untuk tangan kiri.
+    """
+    p0 = ke_piksel(titik, 0, lebar, tinggi)
+    a = ke_piksel(titik, 5, lebar, tinggi) - p0
+    b = ke_piksel(titik, 17, lebar, tinggi) - p0
+    silang = a[0] * b[1] - a[1] * b[0]
+    return silang < 0 if sisi == "kanan" else silang > 0
+
+
+def cek_kualitas_roi(roi):
+    """Kembalikan None kalau ROI bisa dipakai, atau alasan penolakannya."""
+    if roi.mean() < TERANG_MIN:
         return "Foto terlalu gelap, tambah cahaya"
-    if float((roi >= 250).mean()) > AMBANG["terpotong_maks"]:
+    if (roi >= 250).mean() > PUTIH_MAKS:
         return "Foto terlalu terang"
-    if tajam < AMBANG["tajam_min"]:
+    if cv2.Laplacian(pertegas_kontras(roi), cv2.CV_64F).var() < TAJAM_MIN:
         return "Foto kurang jelas, tahan tangan lebih diam"
     return None

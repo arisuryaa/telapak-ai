@@ -1,100 +1,102 @@
-"""palm.py - find the hand and cut the 128x128 palm ROI that the CNN model reads.
+"""palm.py - menemukan tangan di foto dan memotong bagian tengah telapak (ROI).
 
-The same functions cut the ROI for the training data (training/data.py) and for the webcam,
-so the model always sees the same kind of crop. ambil_roi_detail also returns the
-intermediate images so the web app can show each step.
+Alurnya:
+1. MediaPipe Hands mencari 21 titik tangan.
+2. Foto diputar sampai garis pangkal telunjuk (titik 5) ke pangkal kelingking (titik 17) mendatar.
+3. Kotak selebar telapak di bawah garis itu dipotong, diubah ke abu-abu, lalu diperkecil ke 128x128.
 """
+
 import cv2
-import numpy as np
 import mediapipe as mp
+import numpy as np
 
-UKURAN = 128  # ROI size in pixels
+UKURAN_ROI = 128  # ukuran ROI dalam piksel (128x128)
+LEBAR_TELAPAK_MIN = 40  # piksel; kalau lebih kecil, tangan terlalu jauh dari kamera
 
-# Static mode: every request is a single still frame, not a video stream.
+# static_image_mode=True karena setiap permintaan berisi satu foto, bukan video.
 _hands = mp.solutions.hands.Hands(
-    static_image_mode=True, max_num_hands=1, min_detection_confidence=0.6)
+    static_image_mode=True, max_num_hands=1, min_detection_confidence=0.6
+)
 
 
-def deteksi_tangan(frame_bgr):
-    """Return (21 landmarks, MediaPipe handedness label), or None if no hand."""
-    hasil = _hands.process(cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB))
+def deteksi_tangan(foto):
+    """Cari tangan di foto (BGR).
+
+    Kembalikan (titik, label): 21 titik tangan dan label "Left"/"Right" dari MediaPipe.
+    Kembalikan None kalau tidak ada tangan.
+    """
+    hasil = _hands.process(cv2.cvtColor(foto, cv2.COLOR_BGR2RGB))
     if not hasil.multi_hand_landmarks:
         return None
+    titik = hasil.multi_hand_landmarks[0].landmark
     label = hasil.multi_handedness[0].classification[0].label
-    return hasil.multi_hand_landmarks[0].landmark, label
+    return titik, label
 
 
-def batas_vertikal(skala):
-    """Top and bottom edge of the ROI box, in palm widths below the line through both finger bases.
+def ke_piksel(titik, nomor, lebar, tinggi):
+    """Ubah titik MediaPipe (0..1) menjadi koordinat piksel [x, y]."""
+    return np.array([titik[nomor].x * lebar, titik[nomor].y * tinggi])
 
-    skala=1.0 is the journal box: a square from 0.15 to 1.15. Smaller values shrink it evenly.
-    Larger values keep the bottom edge at 1.15, which is about where the wrist starts, and
-    instead widen the box and raise its top edge toward the finger-base line (never above it).
+
+def potong_roi(foto, titik):
+    """Potong ROI telapak dari foto.
+
+    Kembalikan dict berisi:
+      roi        gambar abu-abu 128x128 (yang nanti masuk ke model)
+      potongan   potongan berwarna sebelum diubah ke abu-abu
+      foto_lurus foto yang sudah diputar
+      kotak      (x1, y1, x2, y2) kotak ROI pada foto_lurus
+      garis      dua ujung garis pangkal jari pada foto_lurus
+      sudut      berapa derajat foto diputar
+    Kembalikan None kalau tangan terlalu kecil atau kotaknya keluar dari foto.
     """
-    if skala <= 1.0:
-        tambah = 0.5 * (skala - 1)
-        return 0.15 - tambah, 1.15 + tambah
-    return max(0.0, 0.15 - 0.5 * (skala - 1)), 1.15
+    tinggi, lebar = foto.shape[:2]
+    p5 = ke_piksel(titik, 5, lebar, tinggi)  # pangkal telunjuk
+    p17 = ke_piksel(titik, 17, lebar, tinggi)  # pangkal kelingking
+    p0 = ke_piksel(titik, 0, lebar, tinggi)  # pergelangan
 
-
-def ambil_roi_detail(frame_bgr, lm, skala=1.0):
-    """Cut the palm ROI and return the intermediate steps, or None if it does not fit.
-
-    skala is the box width in palm widths (1.0 = the journal box, a palm-width square).
-    See batas_vertikal() for how the height changes with it.
-    """
-    h, w = frame_bgr.shape[:2]
-    p5 = np.array([lm[5].x * w, lm[5].y * h])    # index finger base
-    p17 = np.array([lm[17].x * w, lm[17].y * h])  # little finger base
-    p0 = np.array([lm[0].x * w, lm[0].y * h])    # wrist
-
-    v = p17 - p5
-    jarak = float(np.linalg.norm(v))
-    if jarak < 40:  # hand too far or too small
+    lebar_telapak = float(np.linalg.norm(p17 - p5))
+    if lebar_telapak < LEBAR_TELAPAK_MIN:
         return None
-    sudut = np.degrees(np.arctan2(v[1], v[0]))
+
+    # Putar foto supaya garis p5-p17 mendatar.
+    sudut = float(np.degrees(np.arctan2(p17[1] - p5[1], p17[0] - p5[0])))
     pusat = (p5 + p17) / 2
+    putar = cv2.getRotationMatrix2D((float(pusat[0]), float(pusat[1])), sudut, 1.0)
+    foto_lurus = cv2.warpAffine(foto, putar, (lebar, tinggi))
 
-    # Rotate so the p5-p17 line is horizontal (palm always upright)
-    M = cv2.getRotationMatrix2D((float(pusat[0]), float(pusat[1])), float(sudut), 1.0)
-    rot = cv2.warpAffine(frame_bgr, M, (w, h))
-    p0r = M @ np.array([p0[0], p0[1], 1.0])
-    arah = 1 if p0r[1] > pusat[1] else -1  # is the wrist below or above the line?
+    # Setelah diputar, apakah pergelangan ada di bawah atau di atas garis?
+    p0_lurus = putar @ np.array([p0[0], p0[1], 1.0])
+    arah = 1 if p0_lurus[1] > pusat[1] else -1
 
-    s = jarak  # palm width; the journal box is s x s
-    atas, bawah = batas_vertikal(skala)  # (0.15, 1.15) at skala=1.0, so the journal values stay exact
-    y_mulai = pusat[1] + arah * atas * s
-    y_akhir = pusat[1] + arah * bawah * s
-    y1, y2 = int(min(y_mulai, y_akhir)), int(max(y_mulai, y_akhir))
-    x1, x2 = int(pusat[0] - skala * s / 2), int(pusat[0] + skala * s / 2)
-    if x1 < 0 or y1 < 0 or x2 > w or y2 > h:
-        return None  # box goes outside the image
-    potongan = rot[y1:y2, x1:x2]
-    if arah == -1:  # normalize orientation
+    # Kotak persegi selebar telapak, dari 0,15 sampai 1,15 lebar telapak di bawah garis.
+    s = lebar_telapak
+    y_a = pusat[1] + arah * 0.15 * s
+    y_b = pusat[1] + arah * 1.15 * s
+    x1, x2 = int(pusat[0] - s / 2), int(pusat[0] + s / 2)
+    y1, y2 = int(min(y_a, y_b)), int(max(y_a, y_b))
+    if x1 < 0 or y1 < 0 or x2 > lebar or y2 > tinggi:
+        return None
+
+    potongan = foto_lurus[y1:y2, x1:x2]
+    if arah == -1:  # tangan terbalik: putar 180 derajat supaya jari selalu di atas
         potongan = cv2.rotate(potongan, cv2.ROTATE_180)
-    roi = cv2.cvtColor(potongan, cv2.COLOR_BGR2GRAY)
+    abu = cv2.cvtColor(potongan, cv2.COLOR_BGR2GRAY)
+
+    garis = [putar @ np.array([p[0], p[1], 1.0]) for p in (p5, p17)]
     return {
-        "rot": rot,
+        "roi": cv2.resize(abu, (UKURAN_ROI, UKURAN_ROI)),
+        "potongan": potongan.copy(),
+        "foto_lurus": foto_lurus,
         "kotak": (x1, y1, x2, y2),
-        "sudut": float(sudut),
-        "potongan": potongan.copy(),  # the colour crop, before grey and the resize to 128x128
-        "roi": cv2.resize(roi, (UKURAN, UKURAN)),
-        # kept so the results page can draw the same box on the photo before it was rotated
-        "putar": M,
-        "p5": p5,
-        "p17": p17,
+        "garis": [(int(x), int(y)) for x, y in garis],
+        "sudut": sudut,
     }
-
-
-def ambil_roi(frame_bgr, lm, skala=1.0):
-    """Return only the 128x128 grayscale palm ROI, or None."""
-    detail = ambil_roi_detail(frame_bgr, lm, skala)
-    return None if detail is None else detail["roi"]
 
 
 _CLAHE = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
 
 
-def terapkan_clahe(roi_gray):
-    """Contrast enhancement used before the model (step 5), in training and in the app."""
-    return _CLAHE.apply(roi_gray)
+def pertegas_kontras(roi):
+    """Pertegas garis telapak dengan CLAHE (ekualisasi histogram per kotak kecil)."""
+    return _CLAHE.apply(roi)

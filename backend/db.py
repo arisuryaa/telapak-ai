@@ -1,36 +1,29 @@
-"""db.py - MySQL models and the data functions the API uses.
+"""db.py - tabel MySQL dan fungsi untuk membaca/menulis data.
 
-Only palm embeddings are stored, never photos. Each person can have one set
-per hand side (kiri / kanan), each set holding 8 embeddings of 128 float32 numbers.
+Ada dua tabel:
+- orang  : nama, umur, status
+- tangan : satu tangan (kiri/kanan) milik seseorang, berisi beberapa embedding dari model
+
+Foto tidak pernah disimpan, hanya embedding (daftar angka).
 """
-from datetime import datetime, timezone
 
-import numpy as np
-from sqlalchemy import (DateTime, Enum, ForeignKey, Integer, LargeBinary, String,
-                        UniqueConstraint, create_engine, delete, select, text)
+from datetime import datetime
+
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, String, create_engine, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 STATUS = ("mahasiswa", "dosen", "staf", "tamu")
 SISI = ("kiri", "kanan")
-DIMENSI = 128  # numbers per embedding
 
 
 class DatabaseTidakTersedia(Exception):
-    """The database server could not be reached."""
-
-
-class TelapakSudahAda(Exception):
-    """This person already has a code set for this hand side."""
+    """MySQL tidak bisa dihubungi."""
 
 
 class Base(DeclarativeBase):
     pass
-
-
-def _sekarang():
-    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class Orang(Base):
@@ -38,101 +31,90 @@ class Orang(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     nama: Mapped[str] = mapped_column(String(100))
-    umur: Mapped[int] = mapped_column(Integer)
+    umur: Mapped[int]
     status: Mapped[str] = mapped_column(Enum(*STATUS, name="status"))
-    dibuat_pada: Mapped[datetime] = mapped_column(DateTime, default=_sekarang)
-    telapak: Mapped[list["Telapak"]] = relationship(back_populates="orang", cascade="all, delete-orphan")
+    dibuat_pada: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    tangan: Mapped[list["Tangan"]] = relationship(
+        back_populates="orang", cascade="all, delete-orphan"
+    )
 
 
-class Telapak(Base):
-    __tablename__ = "telapak"
-    __table_args__ = (UniqueConstraint("orang_id", "sisi"),)
+class Tangan(Base):
+    __tablename__ = "tangan"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     orang_id: Mapped[int] = mapped_column(ForeignKey("orang.id", ondelete="CASCADE"))
     sisi: Mapped[str] = mapped_column(Enum(*SISI, name="sisi"))
-    # 8 embeddings x 128 float32 = 4096 bytes
-    kode: Mapped[bytes] = mapped_column(LargeBinary)
-    # the model that made these embeddings; embeddings of two different trainings cannot be compared
-    model_versi: Mapped[str] = mapped_column(String(20), default="")
-    dibuat_pada: Mapped[datetime] = mapped_column(DateTime, default=_sekarang)
-    orang: Mapped[Orang] = relationship(back_populates="telapak")
-
-
-def _pesan_tidak_tersedia(url, err):
-    detail = getattr(err, "orig", None) or err
-    return (f"MySQL tidak bisa dihubungi di {url.host}:{url.port or 3306}. "
-            f"Nyalakan MySQL di Laragon lalu jalankan ulang. Detail: {detail}")
-
-
-def _url_server(u):
-    """Same server URL without a database, used to create the database first.
-    URL.set(database=None) would keep the old value, so replace it directly."""
-    return u._replace(database=None)
+    # Model yang membuat embedding. Embedding dari model berbeda tidak bisa dibandingkan.
+    model: Mapped[str] = mapped_column(String(50))
+    # Daftar embedding, satu per foto sampel, contoh: [[0.1, -0.2, ...], [0.1, -0.3, ...], ...]
+    embedding: Mapped[list] = mapped_column(JSON)
+    dibuat_pada: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
+    orang: Mapped[Orang] = relationship(back_populates="tangan")
 
 
 def buat_engine(url):
-    """Connect, create the MySQL database if missing, and create the tables."""
+    """Hubungkan ke database. Database MySQL dan tabel-tabelnya dibuat otomatis kalau belum ada."""
     u = make_url(url)
     try:
         if u.get_backend_name() == "mysql":
-            nama_db = u.database
-            with create_engine(_url_server(u)).connect() as conn:
-                conn.execute(text(f"CREATE DATABASE IF NOT EXISTS `{nama_db}` CHARACTER SET utf8mb4"))
-                conn.commit()
+            tanpa_nama_db = u._replace(database=None)
+            with create_engine(tanpa_nama_db).connect() as conn:
+                conn.execute(text(f"CREATE DATABASE IF NOT EXISTS `{u.database}`"))
         engine = create_engine(url, pool_pre_ping=True)
         Base.metadata.create_all(engine)
     except OperationalError as e:
-        raise DatabaseTidakTersedia(_pesan_tidak_tersedia(u, e)) from e
+        raise DatabaseTidakTersedia(
+            f"MySQL tidak bisa dihubungi di {u.host}:{u.port or 3306}. "
+            "Nyalakan MySQL di Laragon lalu jalankan ulang."
+        ) from e
     return engine
 
 
-def kode_ke_bytes(kode):
-    return np.asarray(kode, np.float32).tobytes()
-
-
-def bytes_ke_kode(b):
-    return np.frombuffer(b, np.float32).reshape(-1, DIMENSI).copy()
-
-
 def tambah_orang(s, nama, umur, status):
-    o = Orang(nama=nama, umur=umur, status=status)
-    s.add(o)
-    s.flush()
-    return o
+    orang = Orang(nama=nama, umur=umur, status=status)
+    s.add(orang)
+    s.flush()  # supaya orang.id langsung terisi
+    return orang
 
 
-def simpan_telapak(s, orang_id, sisi, kode, ganti=False, model_versi=""):
-    """Store the embeddings of one hand. Raises TelapakSudahAda unless `ganti` is True."""
-    ada = s.scalar(select(Telapak).where(Telapak.orang_id == orang_id, Telapak.sisi == sisi))
-    if ada is not None:
-        if not ganti:
-            raise TelapakSudahAda(sisi)
-        ada.kode = kode_ke_bytes(kode)
-        ada.model_versi = model_versi
-        s.flush()
-        return ada
-    t = Telapak(orang_id=orang_id, sisi=sisi, kode=kode_ke_bytes(kode), model_versi=model_versi)
-    s.add(t)
-    s.flush()
-    return t
+def cari_tangan(s, orang_id, sisi):
+    return s.scalar(select(Tangan).where(Tangan.orang_id == orang_id, Tangan.sisi == sisi))
 
 
-def muat_galeri(s):
-    """Every enrolled code set, ready for matching."""
-    rows = s.execute(select(Telapak, Orang).join(Telapak.orang)).all()
-    return [{
-        "telapak_id": t.id, "orang_id": o.id, "nama": o.nama,
-        "sisi": t.sisi, "kode": bytes_ke_kode(t.kode), "model_versi": t.model_versi,
-    } for t, o in rows]
+def simpan_tangan(s, orang_id, sisi, embedding, model):
+    """Simpan embedding satu tangan. Kalau tangan itu sudah ada, datanya diganti."""
+    tangan = cari_tangan(s, orang_id, sisi)
+    if tangan is None:
+        tangan = Tangan(orang_id=orang_id, sisi=sisi)
+        s.add(tangan)
+    tangan.embedding = embedding
+    tangan.model = model
 
 
-def orang_ke_dict(o):
+def semua_tangan(s, model):
+    """Semua tangan terdaftar yang dibuat dengan `model`, siap untuk pencocokan."""
+    baris = s.scalars(select(Tangan).where(Tangan.model == model))
+    return [
+        {
+            "tangan_id": t.id,
+            "orang_id": t.orang.id,
+            "nama": t.orang.nama,
+            "sisi": t.sisi,
+            "embedding": t.embedding,
+        }
+        for t in baris
+    ]
+
+
+def orang_ke_dict(orang):
     return {
-        "id": o.id, "nama": o.nama, "umur": o.umur, "status": o.status,
-        "tangan": sorted(t.sisi for t in o.telapak),
-        "versi_tangan": {t.sisi: t.model_versi for t in o.telapak},
-        "dibuat_pada": o.dibuat_pada.isoformat(),
+        "id": orang.id,
+        "nama": orang.nama,
+        "umur": orang.umur,
+        "status": orang.status,
+        "tangan": [{"sisi": t.sisi, "model": t.model} for t in orang.tangan],
+        "dibuat_pada": orang.dibuat_pada.isoformat(),
     }
 
 
@@ -141,20 +123,22 @@ def daftar_orang(s):
 
 
 def ambil_orang(s, orang_id):
-    o = s.get(Orang, orang_id)
-    return None if o is None else orang_ke_dict(o)
+    orang = s.get(Orang, orang_id)
+    return None if orang is None else orang_ke_dict(orang)
 
 
 def hapus_orang(s, orang_id):
-    o = s.get(Orang, orang_id)
-    if o is None:
+    """Hapus satu orang beserta tangannya. Kembalikan False kalau orangnya tidak ada."""
+    orang = s.get(Orang, orang_id)
+    if orang is None:
         return False
-    s.delete(o)  # cascades to the person's code sets
+    s.delete(orang)
     return True
 
 
 def hapus_semua(s):
-    jumlah = len(s.scalars(select(Orang)).all())
-    s.execute(delete(Telapak))
-    s.execute(delete(Orang))
-    return jumlah
+    """Hapus semua orang beserta tangannya. Kembalikan jumlah orang yang dihapus."""
+    semua = s.scalars(select(Orang)).all()
+    for orang in semua:
+        s.delete(orang)
+    return len(semua)
