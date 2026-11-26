@@ -14,8 +14,8 @@ info:
     Embedding dibuat oleh model di `backend/model.py`. Selama model belum dibuat,
     `/api/sampel` dan `/api/scan` berhenti setelah tahap potong ROI.
 servers:
-  - url: http://127.0.0.1:5000
-    description: Backend lokal
+  - url: /
+    description: Server yang sedang membuka halaman ini (127.0.0.1:5000 atau localhost:5173)
 
 tags:
   - name: Pengaturan
