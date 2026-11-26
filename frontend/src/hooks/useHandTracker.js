@@ -1,80 +1,72 @@
 import { useEffect, useState } from "react";
 import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
 
-// Runs MediaPipe Hands on the live <video> in the browser and reports the
-// latest landmarks, the detection rate (FPS), and whether the model is ready.
+// Menjalankan MediaPipe Hands pada <video> di browser, setiap frame.
+// Mengembalikan titik tangan terakhir, apakah detektor sudah siap, dan pesan galat kalau ada.
 export function useHandTracker(videoRef) {
-  const [hasil, setHasil] = useState(null);
-  const [fps, setFps] = useState(0);
+  const [tangan, setTangan] = useState(null); // { titik, label } atau null
   const [siap, setSiap] = useState(false);
   const [galat, setGalat] = useState(null);
 
   useEffect(() => {
     let aktif = true;
-    let landmarker = null;
-    let frameId = null;
-    let terakhirWaktuVideo = -1;
-    let hitungan = 0;
-    let waktuAwalFps = performance.now();
+    let detektor = null;
+    let idFrame = null;
+    let waktuVideoTerakhir = -1;
 
     async function muat() {
+      const opsi = {
+        runningMode: "VIDEO",
+        numHands: 1,
+        minHandDetectionConfidence: 0.6,
+        minTrackingConfidence: 0.6,
+      };
       try {
+        // File-file ini disalin ke public/mediapipe oleh scripts/prepare-mediapipe.mjs
         const fileset = await FilesetResolver.forVisionTasks("/mediapipe/wasm");
-        const opsi = {
-          runningMode: "VIDEO",
-          numHands: 1,
-          minHandDetectionConfidence: 0.6,
-          minTrackingConfidence: 0.6,
-        };
+        const model = "/mediapipe/hand_landmarker.task";
         try {
-          landmarker = await HandLandmarker.createFromOptions(fileset, {
+          detektor = await HandLandmarker.createFromOptions(fileset, {
             ...opsi,
-            baseOptions: { modelAssetPath: "/mediapipe/hand_landmarker.task", delegate: "GPU" },
+            baseOptions: { modelAssetPath: model, delegate: "GPU" },
           });
         } catch {
-          // Some browsers have no WebGL GPU support; fall back to the CPU.
-          landmarker = await HandLandmarker.createFromOptions(fileset, {
+          // Browser tanpa dukungan GPU: pakai CPU.
+          detektor = await HandLandmarker.createFromOptions(fileset, {
             ...opsi,
-            baseOptions: { modelAssetPath: "/mediapipe/hand_landmarker.task", delegate: "CPU" },
+            baseOptions: { modelAssetPath: model, delegate: "CPU" },
           });
         }
         if (!aktif) return;
         setSiap(true);
-        frameId = requestAnimationFrame(loop);
+        idFrame = requestAnimationFrame(putaran);
       } catch (err) {
-        if (aktif) setGalat(`Model tangan gagal dimuat: ${err.message}`);
+        if (aktif) setGalat(`Detektor tangan gagal dimuat: ${err.message}`);
       }
     }
 
-    function loop() {
+    function putaran() {
       if (!aktif) return;
       const video = videoRef.current;
-      if (landmarker && video && video.readyState >= 2 && video.currentTime !== terakhirWaktuVideo) {
-        terakhirWaktuVideo = video.currentTime;
-        const res = landmarker.detectForVideo(video, performance.now());
-        const lm = res.landmarks?.[0] ?? null;
-        const label = res.handedness?.[0]?.[0]?.categoryName ?? null;
-        setHasil(lm ? { lm, label } : null);
-
-        hitungan += 1;
-        const sekarang = performance.now();
-        if (sekarang - waktuAwalFps >= 500) {
-          setFps(Math.round((hitungan * 1000) / (sekarang - waktuAwalFps)));
-          hitungan = 0;
-          waktuAwalFps = sekarang;
-        }
+      const adaFrameBaru = video && video.readyState >= 2 && video.currentTime !== waktuVideoTerakhir;
+      if (adaFrameBaru) {
+        waktuVideoTerakhir = video.currentTime;
+        const hasil = detektor.detectForVideo(video, performance.now());
+        const titik = hasil.landmarks?.[0];
+        const label = hasil.handedness?.[0]?.[0]?.categoryName;
+        setTangan(titik ? { titik, label } : null);
       }
-      frameId = requestAnimationFrame(loop);
+      idFrame = requestAnimationFrame(putaran);
     }
 
     muat();
 
     return () => {
       aktif = false;
-      if (frameId !== null) cancelAnimationFrame(frameId);
-      landmarker?.close();
+      if (idFrame !== null) cancelAnimationFrame(idFrame);
+      detektor?.close();
     };
   }, [videoRef]);
 
-  return { hasil, fps, siap, galat };
+  return { tangan, siap, galat };
 }

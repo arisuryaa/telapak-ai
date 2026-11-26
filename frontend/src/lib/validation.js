@@ -1,17 +1,17 @@
-// Client-side hand checks, mirrored from backend/validation.py.
-// Landmarks are normalized (0..1); w and h are the frame size in pixels.
+// Aturan tangan yang dicek di browser, sama seperti backend/validation.py.
+// Titik tangan dari MediaPipe bernilai 0..1; lebar dan tinggi adalah ukuran video dalam piksel.
 
 export const AMBANG = {
-  rasioJari: 1.1,
-  rasioJempol: 0.7,
-  lebarMin: 0.12,
-  lebarMax: 0.45,
-  gerakMax: 0.012,
-  tahanMs: 1000,
-  jedaMs: 800,
+  rasioJari: 1.1, // ujung jari harus lebih jauh dari pergelangan daripada ruas tengahnya
+  rasioJempol: 0.7, // jempol harus cukup jauh dari pangkal telunjuk
+  lebarMin: 0.12, // lebar telapak minimal, dibanding lebar video
+  lebarMaks: 0.45, // lebar telapak maksimal, dibanding lebar video
+  gerakMaks: 0.012, // rata-rata pergeseran titik antar frame supaya dianggap diam
+  tahanMs: 1000, // lama tangan harus ditahan sebelum foto diambil
+  jedaMs: 800, // jeda antar foto saat mengambil beberapa sampel
 };
 
-// (fingertip, PIP joint) for index, middle, ring, little finger
+// (ujung jari, ruas tengah) untuk telunjuk, tengah, manis, kelingking
 const PASANGAN_JARI = [
   [8, 6],
   [12, 10],
@@ -19,113 +19,113 @@ const PASANGAN_JARI = [
   [20, 18],
 ];
 
-const px = (lm, i, w, h) => ({ x: lm[i].x * w, y: lm[i].y * h });
+const piksel = (titik, i, lebar, tinggi) => ({ x: titik[i].x * lebar, y: titik[i].y * tinggi });
 const jarak = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
-// MediaPipe Tasks (this browser library) reports the real hand on an unmirrored
-// frame. The Python backend uses the legacy API, which assumes a mirrored image,
-// so its mapping is the opposite ("Left" -> kanan). See backend/validation.py.
-export const LABEL_KANAN = "Right";
-
+// MediaPipe di browser melaporkan tangan sungguhan (tanpa anggapan foto dicerminkan),
+// jadi "Right" = kanan. Di backend Python kebalikannya, lihat backend/validation.py.
 export function sisiDariLabel(label) {
-  return label === LABEL_KANAN ? "kanan" : "kiri";
+  return label === "Right" ? "kanan" : "kiri";
 }
 
-// Cross product of wrist->index base and wrist->little base (image y points down).
-// Its sign, together with the hand side, tells palm from back of hand.
-export function silangTelapak(lm, w, h) {
-  const p0 = px(lm, 0, w, h);
-  const a = px(lm, 5, w, h);
-  const b = px(lm, 17, w, h);
-  return (a.x - p0.x) * (b.y - p0.y) - (a.y - p0.y) * (b.x - p0.x);
-}
-
-export function jariTerbuka(lm, w, h) {
-  const p0 = px(lm, 0, w, h);
-  for (const [ujung, pip] of PASANGAN_JARI) {
-    if (jarak(px(lm, ujung, w, h), p0) <= AMBANG.rasioJari * jarak(px(lm, pip, w, h), p0)) {
-      return false;
-    }
+export function jariTerbuka(titik, lebar, tinggi) {
+  const pergelangan = piksel(titik, 0, lebar, tinggi);
+  for (const [ujung, ruas] of PASANGAN_JARI) {
+    const jarakUjung = jarak(piksel(titik, ujung, lebar, tinggi), pergelangan);
+    const jarakRuas = jarak(piksel(titik, ruas, lebar, tinggi), pergelangan);
+    if (jarakUjung <= AMBANG.rasioJari * jarakRuas) return false;
   }
-  const jempol = jarak(px(lm, 4, w, h), px(lm, 5, w, h));
-  return jempol > AMBANG.rasioJempol * jarak(px(lm, 5, w, h), px(lm, 17, w, h));
+  const jempol = jarak(piksel(titik, 4, lebar, tinggi), piksel(titik, 5, lebar, tinggi));
+  const lebarTelapak = jarak(piksel(titik, 5, lebar, tinggi), piksel(titik, 17, lebar, tinggi));
+  return jempol > AMBANG.rasioJempol * lebarTelapak;
 }
 
-export function menghadapKamera(lm, sisi, w, h) {
-  const z = silangTelapak(lm, w, h);
-  return sisi === "kanan" ? z < 0 : z > 0;
+// Perkalian silang vektor pergelangan->telunjuk dan pergelangan->kelingking.
+// Tandanya membedakan telapak dan punggung tangan, dan terbalik untuk tangan kiri.
+export function menghadapKamera(titik, sisi, lebar, tinggi) {
+  const p0 = piksel(titik, 0, lebar, tinggi);
+  const a = piksel(titik, 5, lebar, tinggi);
+  const b = piksel(titik, 17, lebar, tinggi);
+  const silang = (a.x - p0.x) * (b.y - p0.y) - (a.y - p0.y) * (b.x - p0.x);
+  return sisi === "kanan" ? silang < 0 : silang > 0;
 }
 
-// Four corners of the palm ROI in frame pixels, mirroring palm.ambil_roi.
-// Top and bottom edge of the box in palm widths below the finger-base line, mirroring
-// palm.batas_vertikal. 1.0 is the journal box (0.15 to 1.15). Smaller values shrink it evenly;
-// larger values widen it and raise the top edge (never above the line) but keep the bottom at 1.15, the wrist.
-export function batasVertikal(skala) {
-  if (skala <= 1) {
-    const tambah = 0.5 * (skala - 1);
-    return [0.15 - tambah, 1.15 + tambah];
-  }
-  return [Math.max(0, 0.15 - 0.5 * (skala - 1)), 1.15];
-}
-
-// skala is the box width in palm widths (1.0 = journal box, from the server's ROI_SKALA).
-// `didalam` is false when any corner leaves the frame.
-export function kotakRoi(lm, w, h, skala = 1) {
-  const p5 = px(lm, 5, w, h);
-  const p17 = px(lm, 17, w, h);
-  const p0 = px(lm, 0, w, h);
-  const c = { x: (p5.x + p17.x) / 2, y: (p5.y + p17.y) / 2 };
+// Empat sudut kotak ROI di video, sama seperti palm.potong_roi di backend:
+// persegi selebar telapak, dari 0,15 sampai 1,15 lebar telapak di bawah garis pangkal jari.
+export function kotakRoi(titik, lebar, tinggi) {
+  const p5 = piksel(titik, 5, lebar, tinggi);
+  const p17 = piksel(titik, 17, lebar, tinggi);
+  const p0 = piksel(titik, 0, lebar, tinggi);
+  const pusat = { x: (p5.x + p17.x) / 2, y: (p5.y + p17.y) / 2 };
   const s = jarak(p5, p17);
-  const u = { x: (p17.x - p5.x) / s, y: (p17.y - p5.y) / s };
-  let n = { x: -u.y, y: u.x };
-  if ((p0.x - c.x) * n.x + (p0.y - c.y) * n.y < 0) n = { x: -n.x, y: -n.y };
-
-  const [atas, bawah] = batasVertikal(skala);
-  const titik = [];
-  for (const [sign, k] of [[-1, atas], [1, atas], [1, bawah], [-1, bawah]]) {
-    titik.push([
-      c.x + sign * u.x * s * 0.5 * skala + n.x * k * s,
-      c.y + sign * u.y * s * 0.5 * skala + n.y * k * s,
-    ]);
+  const mendatar = { x: (p17.x - p5.x) / s, y: (p17.y - p5.y) / s };
+  // arah tegak lurus garis pangkal jari, menuju pergelangan
+  let turun = { x: -mendatar.y, y: mendatar.x };
+  if ((p0.x - pusat.x) * turun.x + (p0.y - pusat.y) * turun.y < 0) {
+    turun = { x: -turun.x, y: -turun.y };
   }
-  const didalam = titik.every(([x, y]) => x >= 0 && x <= w && y >= 0 && y <= h);
-  return { titik, didalam };
+
+  const sudut = [
+    [-0.5, 0.15],
+    [0.5, 0.15],
+    [0.5, 1.15],
+    [-0.5, 1.15],
+  ].map(([geser, bawah]) => [
+    pusat.x + mendatar.x * geser * s + turun.x * bawah * s,
+    pusat.y + mendatar.y * geser * s + turun.y * bawah * s,
+  ]);
+  const didalam = sudut.every(([x, y]) => x >= 0 && x <= lebar && y >= 0 && y <= tinggi);
+  return { sudut, didalam };
 }
 
-export function rataGerak(lmA, lmB) {
-  if (!lmA || !lmB) return Infinity;
+// Rata-rata pergeseran 21 titik dari frame sebelumnya.
+export function rataGerak(titikA, titikB) {
+  if (!titikA || !titikB) return Infinity;
   let total = 0;
-  for (let i = 0; i < lmA.length; i++) {
-    total += Math.hypot(lmA[i].x - lmB[i].x, lmA[i].y - lmB[i].y);
+  for (let i = 0; i < titikA.length; i++) {
+    total += Math.hypot(titikA[i].x - titikB[i].x, titikA[i].y - titikB[i].y);
   }
-  return total / lmA.length;
+  return total / titikA.length;
 }
 
-export function periksa(lm, label, lmSebelum, w, h, skala = 1) {
-  if (!lm) {
+// Cek semua syarat foto. Kembalikan hasil tiap syarat dan pesan untuk pengguna.
+export function periksa(titik, label, titikSebelum, lebar, tinggi) {
+  if (!titik) {
     return {
-      terdeteksi: false, jari: false, menghadap: false, jarak: false,
-      diam: false, semua: false, sisi: null, label: null, silang: null,
+      terdeteksi: false,
+      jari: false,
+      menghadap: false,
+      jarak: false,
+      diam: false,
+      semua: false,
+      sisi: null,
       pesan: "Letakkan telapak di depan kamera",
     };
   }
   const sisi = sisiDariLabel(label);
-  const jari = jariTerbuka(lm, w, h);
-  const menghadap = menghadapKamera(lm, sisi, w, h);
-  const lebar = jarak(px(lm, 5, w, h), px(lm, 17, w, h)) / w;
-  const jarakOk =
-    lebar >= AMBANG.lebarMin && lebar <= AMBANG.lebarMax && kotakRoi(lm, w, h, skala).didalam;
-  const diam = rataGerak(lm, lmSebelum) <= AMBANG.gerakMax;
-  const semua = jari && menghadap && jarakOk && diam;
+  const jari = jariTerbuka(titik, lebar, tinggi);
+  const menghadap = menghadapKamera(titik, sisi, lebar, tinggi);
+  const lebarTelapak = jarak(piksel(titik, 5, lebar, tinggi), piksel(titik, 17, lebar, tinggi)) / lebar;
+  const jarakPas =
+    lebarTelapak >= AMBANG.lebarMin &&
+    lebarTelapak <= AMBANG.lebarMaks &&
+    kotakRoi(titik, lebar, tinggi).didalam;
+  const diam = rataGerak(titik, titikSebelum) <= AMBANG.gerakMaks;
 
   let pesan = "Tahan...";
   if (!jari) pesan = "Buka semua jari";
   else if (!menghadap) pesan = "Tunjukkan telapak tangan, bukan punggung tangan";
-  else if (!jarakOk) pesan = "Atur jarak tangan ke kamera";
+  else if (!jarakPas) pesan = "Atur jarak tangan ke kamera";
   else if (!diam) pesan = "Tahan tangan agar diam";
 
   return {
-    terdeteksi: true, jari, menghadap, jarak: jarakOk, diam, semua, sisi, label,
-    silang: silangTelapak(lm, w, h), pesan,
+    terdeteksi: true,
+    jari,
+    menghadap,
+    jarak: jarakPas,
+    diam,
+    semua: jari && menghadap && jarakPas && diam,
+    sisi,
+    pesan,
   };
 }

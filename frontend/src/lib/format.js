@@ -1,4 +1,4 @@
-// "kanan (model 20261123-0130), kiri (model 20261123-0130)": each enrolled hand with the model version that made it.
+// "kanan (resnet18), kiri (resnet18)": setiap tangan terdaftar beserta model yang membuatnya.
 export function formatTangan(orang) {
-  return orang.tangan.map((sisi) => `${sisi} (model ${orang.versi_tangan?.[sisi] || "?"})`).join(", ");
+  return orang.tangan.map((t) => `${t.sisi} (${t.model})`).join(", ");
 }

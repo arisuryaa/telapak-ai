@@ -40,16 +40,12 @@ body {
   mask-image: linear-gradient(to bottom, black 0%, transparent 70%);
 }
 
-.pixelated {
-  image-rendering: pixelated;
-}
-
 :focus-visible {
   outline: 3px solid rgb(47 107 239 / 0.45);
   outline-offset: 2px;
 }
 
-/* Camera border pulse when a sample is accepted. */
+/* Bingkai kamera berkedip saat satu sampel diterima. */
 @keyframes kilat {
   0% { box-shadow: inset 0 0 0 6px rgb(47 107 239 / 0.95); }
   100% { box-shadow: inset 0 0 0 0 rgb(47 107 239 / 0); }
@@ -58,19 +54,8 @@ body {
   animation: kilat 600ms ease-out forwards;
 }
 
-/* A dial segment popping in when it fills. */
-@keyframes isi {
-  0% { opacity: 0.2; stroke-width: 10; }
-  60% { stroke-width: 16; }
-  100% { opacity: 1; stroke-width: 12; }
-}
-.animasi-isi {
-  animation: isi 450ms ease-out;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .animasi-kilat,
-  .animasi-isi {
+  .animasi-kilat {
     animation: none;
   }
   .animate-spin {
