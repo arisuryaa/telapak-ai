@@ -105,7 +105,8 @@ export function periksa(titik, label, titikSebelum, lebar, tinggi) {
   const sisi = sisiDariLabel(label);
   const jari = jariTerbuka(titik, lebar, tinggi);
   const menghadap = menghadapKamera(titik, sisi, lebar, tinggi);
-  const lebarTelapak = jarak(piksel(titik, 5, lebar, tinggi), piksel(titik, 17, lebar, tinggi)) / lebar;
+  const lebarTelapak =
+    jarak(piksel(titik, 5, lebar, tinggi), piksel(titik, 17, lebar, tinggi)) / lebar;
   const jarakPas =
     lebarTelapak >= AMBANG.lebarMin &&
     lebarTelapak <= AMBANG.lebarMaks &&

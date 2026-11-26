@@ -13,7 +13,10 @@ function Langkah({ langkah, terakhir }) {
   return (
     <li className="relative grid grid-cols-[2.5rem_1fr] gap-4">
       {!terakhir && (
-        <span className="absolute top-11 -bottom-5 left-5 w-0.5 -translate-x-1/2 bg-line" aria-hidden="true" />
+        <span
+          className="absolute top-11 -bottom-5 left-5 w-0.5 -translate-x-1/2 bg-line"
+          aria-hidden="true"
+        />
       )}
       <span className="relative z-10 flex h-10 w-10 items-center justify-center rounded-full bg-brand text-sm font-bold text-white shadow-float">
         {langkah.no}
@@ -28,7 +31,11 @@ function Langkah({ langkah, terakhir }) {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {langkah.gambar.map((g) => (
               <figure key={g.label} className="text-center text-xs text-muted">
-                <img src={g.src} alt={g.label} className="max-h-80 w-full rounded-xl bg-lilac object-contain" />
+                <img
+                  src={g.src}
+                  alt={g.label}
+                  className="max-h-80 w-full rounded-xl bg-lilac object-contain"
+                />
                 <figcaption className="mt-1.5 font-medium">{g.label}</figcaption>
               </figure>
             ))}
@@ -55,7 +62,8 @@ function KotakHasil({ hasil }) {
 
   let keterangan = "Belum ada data terdaftar untuk dibandingkan.";
   if (status === "gagal") keterangan = "Foto berhenti diproses di langkah terakhir di bawah.";
-  else if (dikenali) keterangan = `Tangan ${terdekat.sisi}, jarak ${terdekat.jarak.toFixed(3)} (batas ${batas.toFixed(2)})`;
+  else if (dikenali)
+    keterangan = `Tangan ${terdekat.sisi}, jarak ${terdekat.jarak.toFixed(3)} (batas ${batas.toFixed(2)})`;
   else if (terdekat) {
     keterangan = `Paling mirip: ${terdekat.nama} (tangan ${terdekat.sisi}), jarak ${terdekat.jarak.toFixed(3)}`;
   }
@@ -63,7 +71,9 @@ function KotakHasil({ hasil }) {
   return (
     <Kartu className="overflow-hidden">
       <div className={`flex flex-wrap items-center gap-5 p-6 sm:p-8 ${warna.latar}`}>
-        <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${warna.ikon}`}>
+        <span
+          className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${warna.ikon}`}
+        >
           {dikenali ? <IkonCentang className="h-7 w-7" /> : <IkonSilang className="h-7 w-7" />}
         </span>
         <div className="min-w-0 flex-1">
@@ -95,8 +105,12 @@ export default function Result() {
       <KotakHasil hasil={hasil} />
       <section className="space-y-5">
         <div>
-          <h2 className="text-2xl font-extrabold tracking-tight text-ink">Cara sistem sampai ke jawaban ini</h2>
-          <p className="mt-1 text-muted">Gambar di bawah adalah data asli dari setiap tahap pemrosesan foto tadi.</p>
+          <h2 className="text-2xl font-extrabold tracking-tight text-ink">
+            Cara sistem sampai ke jawaban ini
+          </h2>
+          <p className="mt-1 text-muted">
+            Gambar di bawah adalah data asli dari setiap tahap pemrosesan foto tadi.
+          </p>
         </div>
         <ol className="space-y-5">
           {hasil.langkah.map((l, i) => (

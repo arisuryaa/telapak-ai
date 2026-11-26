@@ -38,7 +38,10 @@ export default function DistanceChart({ jarak, batas }) {
       </div>
       <div className="relative h-4 text-xs text-muted tabular-nums">
         <span className="absolute left-0">0</span>
-        <span className="absolute -translate-x-1/2 font-semibold text-ink" style={{ left: posisiBatas }}>
+        <span
+          className="absolute -translate-x-1/2 font-semibold text-ink"
+          style={{ left: posisiBatas }}
+        >
           batas {batas.toFixed(2)}
         </span>
         <span className="absolute right-0">{SKALA_MAKS}</span>

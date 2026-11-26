@@ -16,7 +16,8 @@ def test_semua_endpoint_ada_di_openapi():
     for rule in app.url_map.iter_rules():
         if not rule.rule.startswith("/api/") or rule.rule in ("/api/docs", "/api/openapi.yaml"):
             continue
-        path = re.sub(r"<(?:\w+:)?(\w+)>", r"{\1}", rule.rule)  # /api/orang/<int:orang_id> -> /api/orang/{orang_id}
+        # /api/orang/<int:orang_id> -> /api/orang/{orang_id}
+        path = re.sub(r"<(?:\w+:)?(\w+)>", r"{\1}", rule.rule)
         assert f"\n  {path}:" in isi, f"{path} belum didokumentasikan di openapi.yaml"
         for metode in rule.methods - {"HEAD", "OPTIONS"}:
             bagian = isi.split(f"\n  {path}:")[1].split("\n  /api/")[0]

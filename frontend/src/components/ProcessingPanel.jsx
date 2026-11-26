@@ -2,7 +2,13 @@
 export default function ProcessingPanel({ foto, judul, keterangan }) {
   return (
     <div className="relative aspect-video overflow-hidden rounded-[28px] bg-ink shadow-float">
-      {foto && <img src={foto} alt="Foto yang diambil" className="h-full w-full -scale-x-100 object-cover opacity-35" />}
+      {foto && (
+        <img
+          src={foto}
+          alt="Foto yang diambil"
+          className="h-full w-full -scale-x-100 object-cover opacity-35"
+        />
+      )}
       <div
         className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center text-white"
         role="status"

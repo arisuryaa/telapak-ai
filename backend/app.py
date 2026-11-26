@@ -151,8 +151,17 @@ def create_app(database_url=None):
 
         hasil = proses_foto(foto)
         if hasil["gagal"]:
-            return jsonify({"valid": False, "pesan": hasil["gagal"], "sisi": hasil["sisi"], "embedding": None})
-        return jsonify({"valid": True, "pesan": "Sampel diterima", "sisi": hasil["sisi"], "embedding": hasil["embedding"]})
+            return jsonify(
+                {"valid": False, "pesan": hasil["gagal"], "sisi": hasil["sisi"], "embedding": None}
+            )
+        return jsonify(
+            {
+                "valid": True,
+                "pesan": "Sampel diterima",
+                "sisi": hasil["sisi"],
+                "embedding": hasil["embedding"],
+            }
+        )
 
     @app.post("/api/orang")
     def simpan_orang():
@@ -186,7 +195,9 @@ def create_app(database_url=None):
 
             sudah_ada = db.cari_tangan(s, orang_id, sisi) is not None
             if sudah_ada and body.get("ganti") is not True:
-                return galat(f"Tangan {sisi} sudah terdaftar. Ganti data lama?", 409, perlu_konfirmasi=True)
+                return galat(
+                    f"Tangan {sisi} sudah terdaftar. Ganti data lama?", 409, perlu_konfirmasi=True
+                )
 
             db.simpan_tangan(s, orang_id, sisi, body["embedding"], model.NAMA_MODEL)
             s.commit()

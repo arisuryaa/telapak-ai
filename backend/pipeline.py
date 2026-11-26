@@ -27,7 +27,14 @@ def proses_foto(foto):
 
     Kembalikan dict. Kunci yang belum tercapai bernilai None.
     """
-    hasil = {"foto": foto, "titik": None, "sisi": None, "roi": None, "embedding": None, "gagal": None}
+    hasil = {
+        "foto": foto,
+        "titik": None,
+        "sisi": None,
+        "roi": None,
+        "embedding": None,
+        "gagal": None,
+    }
     tinggi, lebar = foto.shape[:2]
 
     # 1. Cari tangan

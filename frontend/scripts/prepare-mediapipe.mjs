@@ -24,5 +24,7 @@ try {
   console.log("MediaPipe assets ready in public/mediapipe");
 } catch (err) {
   // Do not fail npm install; the app will show a camera error until this is fixed.
-  console.warn(`Could not prepare MediaPipe assets (${err.message}). Run "npm run prepare-mediapipe" with internet access.`);
+  console.warn(
+    `Could not prepare MediaPipe assets (${err.message}). Run "npm run prepare-mediapipe" with internet access.`,
+  );
 }

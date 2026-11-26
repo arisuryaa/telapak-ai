@@ -48,7 +48,8 @@ export function useHandTracker(videoRef) {
     function putaran() {
       if (!aktif) return;
       const video = videoRef.current;
-      const adaFrameBaru = video && video.readyState >= 2 && video.currentTime !== waktuVideoTerakhir;
+      const adaFrameBaru =
+        video && video.readyState >= 2 && video.currentTime !== waktuVideoTerakhir;
       if (adaFrameBaru) {
         waktuVideoTerakhir = video.currentTime;
         const hasil = detektor.detectForVideo(video, performance.now());

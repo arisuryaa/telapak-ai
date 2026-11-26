@@ -7,8 +7,7 @@ export const tombol = {
     "inline-flex items-center justify-center gap-2 rounded-full border border-line bg-white px-5 py-2.5 text-sm font-semibold text-ink transition-colors hover:border-brand/40 hover:bg-brand-soft disabled:cursor-not-allowed disabled:opacity-50",
   bahaya:
     "inline-flex items-center justify-center gap-2 rounded-full bg-err px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-err/90 disabled:opacity-50",
-  teks:
-    "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-semibold text-brand hover:bg-brand-soft",
+  teks: "inline-flex items-center gap-1 rounded-full px-3 py-1.5 text-sm font-semibold text-brand hover:bg-brand-soft",
 };
 
 export const input =
@@ -43,7 +42,10 @@ const GAYA_PESAN = {
 
 export function Pesan({ jenis = "info", className = "", children }) {
   return (
-    <div role={jenis === "galat" ? "alert" : "status"} className={`rounded-2xl px-4 py-3 text-sm font-medium ${GAYA_PESAN[jenis]} ${className}`}>
+    <div
+      role={jenis === "galat" ? "alert" : "status"}
+      className={`rounded-2xl px-4 py-3 text-sm font-medium ${GAYA_PESAN[jenis]} ${className}`}
+    >
       {children}
     </div>
   );
@@ -73,7 +75,16 @@ export function IkonTangan({ cermin = false, className = "h-6 w-6" }) {
 
 export function IkonCentang({ className = "h-4 w-4" }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
       <path d="M20 6 9 17l-5-5" />
     </svg>
   );
@@ -81,7 +92,15 @@ export function IkonCentang({ className = "h-4 w-4" }) {
 
 export function IkonSilang({ className = "h-4 w-4" }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" className={className} aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="3"
+      strokeLinecap="round"
+      className={className}
+      aria-hidden="true"
+    >
       <path d="M18 6 6 18M6 6l12 12" />
     </svg>
   );
