@@ -1,4 +1,0 @@
-Sumber ROI: MediaPipe + palm.ambil_roi (sama dengan aplikasi)
-Foto: 12000, berhasil: 9612 (80.1%), gagal: 2388 (di antaranya 167 karena lebih dari 10% kotak keluar dari foto)
-Telapak: latih 298, validasi 43, uji 85 (lalu 162 telapak tidak lengkap ditambahkan ke latih: total latih 460)
-Contoh foto gagal: session1/00012.tiff, session1/00013.tiff, session1/00014.tiff, session1/00016.tiff, session1/00017.tiff, session1/00019.tiff, session1/00020.tiff, session1/00052.tiff, session1/00054.tiff, session1/00055.tiff, session1/00056.tiff, session1/00057.tiff, session1/00058.tiff, session1/00117.tiff, session1/00121.tiff, session1/00122.tiff, session1/00123.tiff, session1/00124.tiff, session1/00125.tiff, session1/00127.tiff

@@ -6,8 +6,3 @@ pymysql
 cryptography
 python-dotenv
 pytest
-# Model training and inference. Install the CUDA build first so pip does not pick the CPU-only wheel:
-#   pip install torch==2.5.1 torchvision==0.20.1 --index-url https://download.pytorch.org/whl/cu121
-torch==2.5.1
-torchvision==0.20.1
-matplotlib

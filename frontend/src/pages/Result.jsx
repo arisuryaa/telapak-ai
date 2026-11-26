@@ -1,15 +1,20 @@
-import { Link, Navigate, useLocation, useNavigate } from "react-router";
+import { Link, Navigate, useLocation } from "react-router";
 import DistanceChart from "../components/DistanceChart.jsx";
 import { IkonCentang, IkonSilang, Kartu, tombol } from "../components/ui.jsx";
 
-const PIXELATED = new Set([4, 5, 6, 7]); // small maps: keep them sharp, not blurred
+const WARNA_STATUS = {
+  dikenali: { ikon: "bg-ok text-white", latar: "bg-ok-soft" },
+  tidak_dikenal: { ikon: "bg-warn-bar text-white", latar: "bg-warn-soft" },
+  gagal: { ikon: "bg-err text-white", latar: "bg-err-soft" },
+};
 
-function Langkah({ langkah, terakhir, skalaMaks }) {
-  const kecil = PIXELATED.has(langkah.no);
+// Satu kartu langkah pemrosesan: judul, penjelasan, gambar, dan angka-angkanya.
+function Langkah({ langkah, terakhir }) {
   return (
     <li className="relative grid grid-cols-[2.5rem_1fr] gap-4">
-      {/* The timeline rail joining one step to the next. */}
-      {!terakhir && <span className="absolute top-11 -bottom-5 left-5 w-0.5 -translate-x-1/2 bg-line" aria-hidden="true" />}
+      {!terakhir && (
+        <span className="absolute top-11 -bottom-5 left-5 w-0.5 -translate-x-1/2 bg-line" aria-hidden="true" />
+      )}
       <span className="relative z-10 flex h-10 w-10 items-center justify-center rounded-full bg-brand text-sm font-bold text-white shadow-float">
         {langkah.no}
       </span>
@@ -17,44 +22,24 @@ function Langkah({ langkah, terakhir, skalaMaks }) {
         <h2 className="text-lg font-bold tracking-tight text-ink">{langkah.judul}</h2>
         <p className="mt-1 mb-4 text-sm text-muted">{langkah.penjelasan}</p>
 
-        {langkah.no === 8 ? (
-          <DistanceChart jarak={langkah.jarak} batas={langkah.angka.batas} maks={skalaMaks} />
-        ) : langkah.gambar.length > 1 ? (
-          <div className={`grid gap-3 ${langkah.gambar.length === 2 ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-3 sm:grid-cols-6"}`}>
+        {langkah.jarak && <DistanceChart jarak={langkah.jarak} batas={langkah.angka.batas} />}
+
+        {langkah.gambar.length > 0 && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {langkah.gambar.map((g) => (
               <figure key={g.label} className="text-center text-xs text-muted">
-                <img src={g.src} alt={g.label} className={`w-full rounded-xl bg-lilac ${kecil && !g.halus ? "pixelated" : ""}`} />
+                <img src={g.src} alt={g.label} className="max-h-80 w-full rounded-xl bg-lilac object-contain" />
                 <figcaption className="mt-1.5 font-medium">{g.label}</figcaption>
               </figure>
-            ))}
-          </div>
-        ) : (
-          langkah.gambar.map((g) => (
-            <img
-              key={g.label}
-              src={g.src}
-              alt={g.label}
-              className={`max-h-80 rounded-2xl bg-lilac ${kecil ? "pixelated" : ""}`}
-            />
-          ))
-        )}
-
-        {langkah.legenda && (
-          <div className="mt-4 flex flex-wrap gap-3 text-xs text-muted">
-            {langkah.legenda.map((l) => (
-              <span key={l.arah} className="flex items-center gap-1.5">
-                <span className="inline-block h-3 w-3 rounded" style={{ backgroundColor: l.warna }} />
-                {l.arah}
-              </span>
             ))}
           </div>
         )}
 
         <dl className="mt-4 flex flex-wrap gap-2 text-xs">
-          {Object.entries(langkah.angka).map(([k, v]) => (
-            <div key={k} className="flex gap-1.5 rounded-full bg-canvas px-3 py-1">
-              <dt className="text-muted">{k}</dt>
-              <dd className="font-semibold text-ink tabular-nums">{String(v)}</dd>
+          {Object.entries(langkah.angka).map(([nama, nilai]) => (
+            <div key={nama} className="flex gap-1.5 rounded-full bg-canvas px-3 py-1">
+              <dt className="text-muted">{nama}</dt>
+              <dd className="font-semibold text-ink tabular-nums">{String(nilai)}</dd>
             </div>
           ))}
         </dl>
@@ -63,45 +48,37 @@ function Langkah({ langkah, terakhir, skalaMaks }) {
   );
 }
 
-const GAYA_HASIL = {
-  dikenali: { ikon: "bg-ok text-white", latar: "bg-ok-soft" },
-  tidak_dikenal: { ikon: "bg-warn-bar text-white", latar: "bg-warn-soft" },
-  gagal: { ikon: "bg-err text-white", latar: "bg-err-soft" },
-};
+function KotakHasil({ hasil }) {
+  const { status, pesan, terdekat, batas } = hasil;
+  const dikenali = status === "dikenali";
+  const warna = WARNA_STATUS[status];
 
-function KotakHasil({ hasil, batas, jarak }) {
-  const navigate = useNavigate();
-  const terdekat = jarak[0];
-  const dikenali = hasil.status === "dikenali";
-  const gaya = GAYA_HASIL[hasil.status] ?? GAYA_HASIL.gagal;
+  let keterangan = "Belum ada data terdaftar untuk dibandingkan.";
+  if (status === "gagal") keterangan = "Foto berhenti diproses di langkah terakhir di bawah.";
+  else if (dikenali) keterangan = `Tangan ${terdekat.sisi}, jarak ${terdekat.jarak.toFixed(3)} (batas ${batas.toFixed(2)})`;
+  else if (terdekat) {
+    keterangan = `Paling mirip: ${terdekat.nama} (tangan ${terdekat.sisi}), jarak ${terdekat.jarak.toFixed(3)}`;
+  }
 
   return (
     <Kartu className="overflow-hidden">
-      <div className={`flex flex-wrap items-center gap-5 p-6 sm:p-8 ${gaya.latar}`}>
-        <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${gaya.ikon}`}>
+      <div className={`flex flex-wrap items-center gap-5 p-6 sm:p-8 ${warna.latar}`}>
+        <span className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${warna.ikon}`}>
           {dikenali ? <IkonCentang className="h-7 w-7" /> : <IkonSilang className="h-7 w-7" />}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-2xl font-extrabold tracking-tight text-ink sm:text-3xl">{hasil.pesan}</p>
-          <p className="mt-1 text-sm text-muted">
-            {dikenali
-              ? `Tangan ${hasil.sisi}, jarak ${hasil.jarak.toFixed(3)} (batas ${batas.toFixed(2)})`
-              : terdekat
-                ? `Paling mirip: ${terdekat.nama} (tangan ${terdekat.sisi}), jarak ${terdekat.jarak.toFixed(3)}`
-                : "Belum ada data terdaftar untuk dibandingkan."}
-          </p>
+          <p className="text-2xl font-extrabold tracking-tight text-ink sm:text-3xl">{pesan}</p>
+          <p className="mt-1 text-sm text-muted">{keterangan}</p>
         </div>
         <div className="flex flex-wrap gap-3">
           {dikenali && (
-            <button
-              type="button"
-              onClick={() => navigate(`/orang/${hasil.orang_id}`, { state: { sisi: hasil.sisi, jarak: hasil.jarak } })}
-              className={tombol.utama}
-            >
+            <Link to={`/orang/${terdekat.orang_id}`} state={{ terdekat }} className={tombol.utama}>
               Lihat detail
-            </button>
+            </Link>
           )}
-          <Link to="/" className={dikenali ? tombol.kedua : tombol.utama}>Scan ulang</Link>
+          <Link to="/" className={dikenali ? tombol.kedua : tombol.utama}>
+            Scan ulang
+          </Link>
         </div>
       </div>
     </Kartu>
@@ -111,22 +88,19 @@ function KotakHasil({ hasil, batas, jarak }) {
 export default function Result() {
   const { state } = useLocation();
   if (!state?.hasil) return <Navigate to="/" replace />;
+  const hasil = state.hasil;
 
-  const { langkah, jarak, batas, hasil, metode_nama: metodeNama, skala_maks: skalaMaks } = state.hasil;
   return (
     <div className="space-y-10">
-      <KotakHasil hasil={hasil} batas={batas} jarak={jarak} />
+      <KotakHasil hasil={hasil} />
       <section className="space-y-5">
         <div>
           <h2 className="text-2xl font-extrabold tracking-tight text-ink">Cara sistem sampai ke jawaban ini</h2>
-          <p className="mt-1 text-muted">
-            Gambar di bawah adalah data asli dari setiap tahap pemrosesan foto tadi.
-            {metodeNama && <> Metode pengenalan: <b className="font-semibold text-ink">{metodeNama}</b>.</>}
-          </p>
+          <p className="mt-1 text-muted">Gambar di bawah adalah data asli dari setiap tahap pemrosesan foto tadi.</p>
         </div>
         <ol className="space-y-5">
-          {langkah.map((l, i) => (
-            <Langkah key={l.no} langkah={l} terakhir={i === langkah.length - 1} skalaMaks={skalaMaks} />
+          {hasil.langkah.map((l, i) => (
+            <Langkah key={l.no} langkah={l} terakhir={i === hasil.langkah.length - 1} />
           ))}
         </ol>
       </section>

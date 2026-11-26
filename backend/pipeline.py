@@ -1,95 +1,66 @@
-"""pipeline.py - decode one frame and run the recognition steps in order.
+"""pipeline.py - memproses satu foto dari kamera, langkah demi langkah.
 
-The steps stop at the first check that fails and record which step it was,
-so the results page can show exactly how far the photo got.
+Proses berhenti di pemeriksaan pertama yang gagal, dan alasannya disimpan di hasil["gagal"].
 """
+
 import base64
-import logging
-from dataclasses import dataclass
 
 import cv2
 import numpy as np
 
+import model
 import palm
-from validation import (jari_terbuka, kualitas_roi, menghadap_kamera, silang_telapak,
-                        sisi_dari_label, ukur_roi)
-
-log = logging.getLogger("telapak")
+from validation import cek_kualitas_roi, jari_terbuka, menghadap_kamera, sisi_dari_label
 
 
-def baca_frame(data_url):
-    """Decode a data URL or plain base64 JPEG/PNG into a BGR image, or None."""
+def baca_foto(data_url):
+    """Ubah foto dari browser (data URL base64 JPEG/PNG) menjadi gambar BGR. None kalau rusak."""
     try:
         data = base64.b64decode(data_url.split(",", 1)[-1], validate=True)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, AttributeError):
         return None
     return cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
 
 
-@dataclass
-class Analisis:
-    frame: np.ndarray
-    lm: list = None
-    label: str = None
-    sisi: str = None
-    roi_detail: dict = None
-    kode_detail: dict = None
-    tahap: int = 1          # last step reached (1..7)
-    gagal: str = None       # reason the photo was rejected, if any
-    model_versi: str = None  # version of the model that made the embedding
+def proses_foto(foto):
+    """Deteksi tangan, cek aturan, potong ROI, lalu buat embedding dengan model.
 
-    @property
-    def kode(self):
-        """The embedding: 128 numbers of length 1, or None if the photo was rejected."""
-        return None if self.kode_detail is None else self.kode_detail["embedding"]
+    Kembalikan dict. Kunci yang belum tercapai bernilai None.
+    """
+    hasil = {"foto": foto, "titik": None, "sisi": None, "roi": None, "embedding": None, "gagal": None}
+    tinggi, lebar = foto.shape[:2]
 
+    # 1. Cari tangan
+    deteksi = palm.deteksi_tangan(foto)
+    if deteksi is None:
+        hasil["gagal"] = "Tangan tidak terdeteksi"
+        return hasil
+    titik, label = deteksi
+    hasil["titik"] = titik
+    hasil["sisi"] = sisi_dari_label(label)
 
-def analisis(frame_bgr, pengenal, deteksi=palm.deteksi_tangan):
-    """Run steps 1-7 on one frame and log a one-line summary. `pengenal` is the model (model.Pengenal);
-    it and `deteksi` are injectable for tests."""
-    a = _analisis(frame_bgr, pengenal, deteksi)
-    _catat(a)
-    return a
+    # 2. Cek posisi tangan
+    if not jari_terbuka(titik, lebar, tinggi):
+        hasil["gagal"] = "Buka semua jari"
+        return hasil
+    if not menghadap_kamera(titik, hasil["sisi"], lebar, tinggi):
+        hasil["gagal"] = "Tunjukkan telapak tangan, bukan punggung tangan"
+        return hasil
 
+    # 3. Potong ROI dan cek kualitasnya
+    roi = palm.potong_roi(foto, titik)
+    if roi is None:
+        hasil["gagal"] = "Tangan terlalu dekat/jauh atau keluar dari bingkai"
+        return hasil
+    hasil["roi"] = roi
+    alasan = cek_kualitas_roi(roi["roi"])
+    if alasan:
+        hasil["gagal"] = alasan
+        return hasil
 
-def _catat(a):
-    h, w = a.frame.shape[:2]
-    bagian = [f"frame={w}x{h}", f"model={a.model_versi}", f"tahap={a.tahap}"]
-    if a.lm is not None:
-        bagian.append(f"label={a.label} sisi={a.sisi} silang={silang_telapak(a.lm, w, h):.0f}")
-    if a.roi_detail is not None:
-        roi = a.roi_detail["roi"]
-        terang, tajam = ukur_roi(roi)
-        terpotong = 100 * float((roi >= 250).mean())
-        bagian.append(f"roi_terang={terang:.1f} roi_terpotong={terpotong:.0f}% roi_tajam={tajam:.1f}")
-    bagian.append(f"hasil=gagal: {a.gagal}" if a.gagal else "hasil=lolos")
-    log.info("analisis %s", " ".join(bagian))
-
-
-def _analisis(frame_bgr, pengenal, deteksi):
-    a = Analisis(frame=frame_bgr, model_versi=pengenal.versi)
-    hasil = deteksi(frame_bgr)
-    if hasil is None:
-        a.gagal = "Tangan tidak terdeteksi"
-        return a
-    a.lm, a.label = hasil
-    a.sisi = sisi_dari_label(a.label)
-    a.tahap = 2
-    h, w = frame_bgr.shape[:2]
-    if not jari_terbuka(a.lm, w, h):
-        a.gagal = "Buka semua jari"
-        return a
-    if not menghadap_kamera(a.lm, a.sisi, w, h):
-        a.gagal = "Tunjukkan telapak tangan, bukan punggung tangan"
-        return a
-    a.roi_detail = palm.ambil_roi_detail(frame_bgr, a.lm)
-    if a.roi_detail is None:
-        a.gagal = "Tangan terlalu dekat/jauh atau keluar dari bingkai"
-        return a
-    a.tahap = 4
-    a.gagal = kualitas_roi(a.roi_detail["roi"])
-    if a.gagal:
-        return a
-    a.tahap = 7
-    a.kode_detail = pengenal.detail(a.roi_detail["roi"])
-    return a
+    # 4. Ubah ROI menjadi embedding dengan model
+    if not model.model_siap():
+        hasil["gagal"] = "Model belum dibuat. Isi fungsi buat_embedding di backend/model.py"
+        return hasil
+    hasil["embedding"] = [float(x) for x in model.buat_embedding(roi["roi"])]
+    return hasil

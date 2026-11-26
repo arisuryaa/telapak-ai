@@ -21,7 +21,7 @@ export default function App() {
             <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand text-white">
               <IkonTangan className="h-5 w-5" />
             </span>
-            Telapak ID
+            Telapak AI
           </Link>
           <nav className="order-3 flex w-full justify-center gap-1 sm:order-none sm:w-auto">
             <NavLink to="/" end className={linkClass}>Scan</NavLink>

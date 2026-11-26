@@ -5,23 +5,10 @@ import ProcessingPanel from "../components/ProcessingPanel.jsx";
 import { JudulHalaman, Pesan } from "../components/ui.jsx";
 import { ambilPengaturan, scan } from "../lib/api.js";
 
-// Used until the server answers, and if it cannot be reached.
-const CADANGAN = { metode: "cnn", metode_nama: "Model CNN (ResNet18)", model_versi: "", batas_default: 0.4, batas_min: 0.05, batas_maks: 1.0 };
-
-// Every training gives the model a new distance scale, so the remembered threshold is kept per model version.
-function batasTersimpan(p) {
-  try {
-    const v = Number(localStorage.getItem(`batas_${p.metode}_${p.model_versi}`));
-    return v >= p.batas_min && v <= p.batas_maks ? v : p.batas_default;
-  } catch {
-    return p.batas_default;
-  }
-}
-
 export default function Scan() {
   const navigate = useNavigate();
   const [pengaturan, setPengaturan] = useState(null);
-  const [batas, setBatas] = useState(null);
+  const [batas, setBatas] = useState(0.5);
   const [memproses, setMemproses] = useState(false);
   const [foto, setFoto] = useState(null);
   const [galat, setGalat] = useState(null);
@@ -30,41 +17,26 @@ export default function Scan() {
     ambilPengaturan()
       .then((p) => {
         setPengaturan(p);
-        setBatas(batasTersimpan(p));
+        setBatas(p.batas_bawaan);
       })
-      .catch(() => {
-        setPengaturan(CADANGAN);
-        setBatas(CADANGAN.batas_default);
-      });
+      .catch((err) => setGalat(`Server tidak bisa dihubungi: ${err.message}`));
   }, []);
 
-  const p = pengaturan ?? CADANGAN;
-  const nilai = batas ?? p.batas_default;
-
-  function ubahBatas(e) {
-    const v = Number(e.target.value);
-    setBatas(v);
-    try {
-      localStorage.setItem(`batas_${p.metode}_${p.model_versi}`, String(v));
-    } catch {
-      // private mode: the slider still works, it just will not be remembered
-    }
-  }
-
-  async function onAmbil(frame) {
-    setFoto(frame);
+  async function onAmbil(fotoBaru) {
+    setFoto(fotoBaru);
     setMemproses(true);
     setGalat(null);
     try {
-      const hasil = await scan(frame, nilai);
+      const hasil = await scan(fotoBaru, batas);
       navigate("/hasil", { state: { hasil } });
     } catch (err) {
-      setGalat(err.message);
+      setGalat(`${err.message}. Tunjukkan telapak sekali lagi untuk mencoba ulang.`);
       setMemproses(false);
     }
   }
 
-  const persen = ((nilai - p.batas_min) / (p.batas_maks - p.batas_min)) * 100;
+  const batasMin = pengaturan?.batas_min ?? 0.05;
+  const batasMaks = pengaturan?.batas_maks ?? 1;
 
   return (
     <div className="space-y-8">
@@ -75,45 +47,45 @@ export default function Scan() {
         <label className="w-full max-w-xs rounded-2xl border border-white bg-white/80 p-4 text-sm shadow-card sm:w-72">
           <span className="flex items-baseline justify-between">
             <span className="font-semibold text-ink">Batas kecocokan</span>
-            <span className="text-base font-bold text-brand tabular-nums">{nilai.toFixed(2)}</span>
+            <span className="text-base font-bold text-brand tabular-nums">{batas.toFixed(2)}</span>
           </span>
           <input
             type="range"
-            min={p.batas_min}
-            max={p.batas_maks}
+            min={batasMin}
+            max={batasMaks}
             step="0.01"
-            value={nilai}
-            onChange={ubahBatas}
-            className="mt-3 h-2 w-full cursor-pointer appearance-none rounded-full accent-brand"
-            style={{ background: `linear-gradient(to right, #2f6bef ${persen}%, #e6e8fb ${persen}%)` }}
+            value={batas}
+            onChange={(e) => setBatas(Number(e.target.value))}
+            className="mt-3 w-full cursor-pointer accent-brand"
           />
           <span className="mt-2 flex justify-between text-xs text-muted">
             <span>Lebih ketat</span>
             <span>Lebih longgar</span>
           </span>
-          <span className="mt-2 block text-xs text-muted">Metode pengenalan: {p.metode_nama}</span>
         </label>
       </JudulHalaman>
 
-      {/* Keep the camera mounted (hidden) so it does not reload the model after an error. */}
-      <div className={memproses ? "hidden" : ""}>
-        <PalmCamera mode="sekali" onAmbil={onAmbil} aktif={!memproses} pesanTahan="Tahan posisi ini…" />
-      </div>
-      {memproses && (
-        <ProcessingPanel
-          foto={foto}
-          judul="Mencocokkan telapak…"
-          keterangan="Foto sudah diambil. Tangan boleh diturunkan."
-        />
-      )}
-      {galat && (
-        <Pesan jenis="galat">
-          {galat} Tunjukkan telapak sekali lagi untuk mencoba ulang.
+      {pengaturan && !pengaturan.model_siap && (
+        <Pesan jenis="peringatan">
+          Model belum dibuat. Scan tetap berjalan sampai tahap potong ROI, tetapi belum bisa mengenali orang. Isi{" "}
+          <code>backend/model.py</code> untuk memasang model.
         </Pesan>
       )}
+
+      {/* Kamera tetap dipasang (disembunyikan) supaya detektor tangan tidak dimuat ulang. */}
+      <div className={memproses ? "hidden" : ""}>
+        <PalmCamera mode="sekali" onAmbil={onAmbil} aktif={!memproses} />
+      </div>
+      {memproses && (
+        <ProcessingPanel foto={foto} judul="Mencocokkan telapak…" keterangan="Foto sudah diambil. Tangan boleh diturunkan." />
+      )}
+      {galat && <Pesan jenis="galat">{galat}</Pesan>}
+
       <p className="text-sm text-muted">
         Belum terdaftar?{" "}
-        <Link to="/daftar" className="font-semibold text-brand hover:underline">Daftarkan telapakmu</Link>
+        <Link to="/daftar" className="font-semibold text-brand hover:underline">
+          Daftarkan telapakmu
+        </Link>
       </p>
     </div>
   );
