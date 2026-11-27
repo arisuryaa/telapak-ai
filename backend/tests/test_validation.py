@@ -38,7 +38,9 @@ def roi_telapak_halus():
 def test_kualitas_roi():
     assert cek_kualitas_roi(ROI_CONTOH) is None
     assert cek_kualitas_roi(roi_telapak_halus()) is None
-    assert cek_kualitas_roi(np.full((128, 128), 10, np.uint8)) == "Foto terlalu gelap, tambah cahaya"
+    assert (
+        cek_kualitas_roi(np.full((128, 128), 10, np.uint8)) == "Foto terlalu gelap, tambah cahaya"
+    )
     assert cek_kualitas_roi(np.full((128, 128), 252, np.uint8)) == "Foto terlalu terang"
     buram = cv2.GaussianBlur(roi_telapak_halus(), (0, 0), 3)
     assert cek_kualitas_roi(buram) == "Foto kurang jelas, tahan tangan lebih diam"

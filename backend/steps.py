@@ -62,7 +62,10 @@ def susun_langkah(hasil, jarak=None, batas=None):
                 "judul": "Deteksi tangan",
                 "penjelasan": "MediaPipe menemukan 21 titik pada tangan. Garis hijau adalah kerangka tangan.",
                 "gambar": [
-                    {"label": "21 titik", "src": ke_data_url(gambar_titik_tangan(foto, hasil["titik"]))}
+                    {
+                        "label": "21 titik",
+                        "src": ke_data_url(gambar_titik_tangan(foto, hasil["titik"])),
+                    }
                 ],
                 "angka": {"jumlah titik": 21, "sisi": hasil["sisi"]},
             }

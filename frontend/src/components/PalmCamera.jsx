@@ -95,14 +95,17 @@ export default function PalmCamera({
     let stream = null;
     let batal = false;
     navigator.mediaDevices
-      .getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" } })
+      .getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" },
+      })
       .then((s) => {
         if (batal) return s.getTracks().forEach((t) => t.stop());
         stream = s;
         if (videoRef.current) videoRef.current.srcObject = s;
       })
       .catch(() => {
-        if (!batal) setGalatKamera("Kamera tidak bisa dibuka. Izinkan akses kamera lalu muat ulang halaman.");
+        if (!batal)
+          setGalatKamera("Kamera tidak bisa dibuka. Izinkan akses kamera lalu muat ulang halaman.");
       });
     return () => {
       batal = true;
@@ -141,7 +144,9 @@ export default function PalmCamera({
 
     sibukRef.current = true;
     setSibuk(true);
-    Promise.resolve(onAmbilRef.current?.(ambilFrame(video, lebar, tinggi), { sisi: p.sisi })).finally(() => {
+    Promise.resolve(
+      onAmbilRef.current?.(ambilFrame(video, lebar, tinggi), { sisi: p.sisi }),
+    ).finally(() => {
       sibukRef.current = false;
       setSibuk(false);
       if (mode === "sekali") selesai.current = true;
@@ -162,7 +167,13 @@ export default function PalmCamera({
     <div className="grid gap-5 lg:grid-cols-[1fr_20rem]">
       <div className="relative aspect-video overflow-hidden rounded-[28px] bg-ink shadow-float">
         {/* Video dan kanvas dicerminkan (-scale-x-100) supaya terasa seperti bercermin. */}
-        <video ref={videoRef} autoPlay playsInline muted className="h-full w-full -scale-x-100 object-cover" />
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className="h-full w-full -scale-x-100 object-cover"
+        />
         <canvas
           ref={kanvasRef}
           className="pointer-events-none absolute inset-0 h-full w-full -scale-x-100 object-cover"
@@ -176,7 +187,12 @@ export default function PalmCamera({
           </div>
         )}
 
-        {kilat > 0 && <div key={kilat} className="animasi-kilat pointer-events-none absolute inset-0 rounded-[28px]" />}
+        {kilat > 0 && (
+          <div
+            key={kilat}
+            className="animasi-kilat pointer-events-none absolute inset-0 rounded-[28px]"
+          />
+        )}
 
         {galat ? (
           <div className="absolute inset-0 flex items-center justify-center p-6 text-center text-sm font-medium text-white">
@@ -208,7 +224,11 @@ export default function PalmCamera({
                 <li
                   key={kunci}
                   className={`flex items-center gap-3 rounded-xl px-2.5 py-1.5 ${
-                    sekarang ? "bg-warn-soft font-semibold text-ink" : ok ? "text-ink" : "text-muted"
+                    sekarang
+                      ? "bg-warn-soft font-semibold text-ink"
+                      : ok
+                        ? "text-ink"
+                        : "text-muted"
                   }`}
                 >
                   <span

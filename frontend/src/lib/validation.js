@@ -79,7 +79,7 @@ export function kotakRoi(titik, lebar, tinggi) {
 }
 
 // Rata-rata pergeseran 21 titik dari frame sebelumnya.
-export function rataGerak(titikA, titikB) {
+function rataGerak(titikA, titikB) {
   if (!titikA || !titikB) return Infinity;
   let total = 0;
   for (let i = 0; i < titikA.length; i++) {
@@ -105,7 +105,8 @@ export function periksa(titik, label, titikSebelum, lebar, tinggi) {
   const sisi = sisiDariLabel(label);
   const jari = jariTerbuka(titik, lebar, tinggi);
   const menghadap = menghadapKamera(titik, sisi, lebar, tinggi);
-  const lebarTelapak = jarak(piksel(titik, 5, lebar, tinggi), piksel(titik, 17, lebar, tinggi)) / lebar;
+  const lebarTelapak =
+    jarak(piksel(titik, 5, lebar, tinggi), piksel(titik, 17, lebar, tinggi)) / lebar;
   const jarakPas =
     lebarTelapak >= AMBANG.lebarMin &&
     lebarTelapak <= AMBANG.lebarMaks &&

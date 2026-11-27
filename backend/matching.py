@@ -1,4 +1,4 @@
-"""pencocokan.py - membandingkan embedding hasil scan dengan embedding yang tersimpan."""
+"""matching.py - membandingkan embedding hasil scan dengan embedding yang tersimpan."""
 
 import numpy as np
 

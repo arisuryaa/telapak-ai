@@ -39,7 +39,8 @@ export default function PersonDetail() {
         </dl>
         {state?.terdekat && (
           <p className="border-t border-line bg-ok-soft px-6 py-4 text-sm font-medium text-ok sm:px-8">
-            Cocok dengan tangan {state.terdekat.sisi} pada scan terakhir, jarak {state.terdekat.jarak.toFixed(3)}.
+            Cocok dengan tangan {state.terdekat.sisi} pada scan terakhir, jarak{" "}
+            {state.terdekat.jarak.toFixed(3)}.
           </p>
         )}
       </Kartu>

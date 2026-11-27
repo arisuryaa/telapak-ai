@@ -36,9 +36,7 @@ def jari_terbuka(titik, lebar, tinggi):
         if jarak_ujung <= RASIO_JARI * jarak_ruas:
             return False
 
-    jempol = np.linalg.norm(
-        ke_piksel(titik, 4, lebar, tinggi) - ke_piksel(titik, 5, lebar, tinggi)
-    )
+    jempol = np.linalg.norm(ke_piksel(titik, 4, lebar, tinggi) - ke_piksel(titik, 5, lebar, tinggi))
     lebar_telapak = np.linalg.norm(
         ke_piksel(titik, 5, lebar, tinggi) - ke_piksel(titik, 17, lebar, tinggi)
     )

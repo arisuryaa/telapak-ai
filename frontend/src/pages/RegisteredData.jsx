@@ -38,7 +38,10 @@ export default function RegisteredData() {
 
   return (
     <div className="space-y-8">
-      <JudulHalaman judul="Data terdaftar" keterangan={daftar && `${daftar.length} orang terdaftar.`}>
+      <JudulHalaman
+        judul="Data terdaftar"
+        keterangan={daftar && `${daftar.length} orang terdaftar.`}
+      >
         <div className="flex flex-wrap gap-3">
           {daftar?.length > 0 && (
             <button type="button" onClick={hapusSemuanya} className={tombol.kedua}>

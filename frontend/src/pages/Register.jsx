@@ -2,13 +2,28 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import PalmCamera from "../components/PalmCamera.jsx";
 import ProcessingPanel from "../components/ProcessingPanel.jsx";
-import { IkonCentang, IkonTangan, JudulHalaman, Kartu, Pesan, input, tombol } from "../components/ui.jsx";
+import {
+  IkonCentang,
+  IkonTangan,
+  JudulHalaman,
+  Kartu,
+  Pesan,
+  input,
+  tombol,
+} from "../components/ui.jsx";
 import { ambilPengaturan, daftarOrang, kirimSampel, simpanOrang } from "../lib/api.js";
 import { formatTangan } from "../lib/format.js";
 
 const JUMLAH_SAMPEL = 8;
 const STATUS = ["mahasiswa", "dosen", "staf", "tamu"];
-const FORM_AWAL = { nama: "", umur: "", status: "mahasiswa", sisi: "kanan", persetujuan: false, ganti: false };
+const FORM_AWAL = {
+  nama: "",
+  umur: "",
+  status: "mahasiswa",
+  sisi: "kanan",
+  persetujuan: false,
+  ganti: false,
+};
 
 // Delapan kotak kecil: kotak terisi biru untuk setiap sampel yang sudah diambil.
 function ProgresSampel({ jumlah }) {
@@ -20,7 +35,10 @@ function ProgresSampel({ jumlah }) {
       </p>
       <div className="flex gap-1.5">
         {Array.from({ length: JUMLAH_SAMPEL }, (_, i) => (
-          <span key={i} className={`h-2 flex-1 rounded-full ${i < jumlah ? "bg-brand" : "bg-lilac"}`} />
+          <span
+            key={i}
+            className={`h-2 flex-1 rounded-full ${i < jumlah ? "bg-brand" : "bg-lilac"}`}
+          />
         ))}
       </div>
       <p className="text-xs text-muted">sampel diambil</p>
@@ -37,7 +55,9 @@ function PilihanTangan({ nilai, onUbah, terdaftar }) {
           <label
             key={sisi}
             className={`relative flex cursor-pointer flex-col items-center gap-2 rounded-2xl border-2 px-3 py-4 text-sm font-semibold ${
-              nilai === sisi ? "border-brand bg-brand-soft text-brand" : "border-line bg-white text-muted"
+              nilai === sisi
+                ? "border-brand bg-brand-soft text-brand"
+                : "border-line bg-white text-muted"
             }`}
           >
             <input
@@ -105,7 +125,8 @@ export default function Register() {
     if (pilihan === "baru") {
       const umur = Number(form.umur);
       if (!form.nama.trim()) return setGalat("Isi nama dulu.");
-      if (!Number.isInteger(umur) || umur < 1 || umur > 120) return setGalat("Umur harus angka 1–120.");
+      if (!Number.isInteger(umur) || umur < 1 || umur > 120)
+        return setGalat("Umur harus angka 1–120.");
     }
     if (sudahTerdaftar && !form.ganti) {
       return setGalat(`Centang "Ganti data lama" untuk mendaftarkan ulang tangan ${form.sisi}.`);
@@ -120,7 +141,8 @@ export default function Register() {
     try {
       const hasil = await kirimSampel(foto);
       if (!hasil.valid) return setDitolak(hasil.pesan);
-      if (hasil.sisi !== form.sisi) return setDitolak(`Itu tangan ${hasil.sisi}. Tunjukkan tangan ${form.sisi}.`);
+      if (hasil.sisi !== form.sisi)
+        return setDitolak(`Itu tangan ${hasil.sisi}. Tunjukkan tangan ${form.sisi}.`);
       setDitolak(null);
       sampel.current.push(hasil.embedding);
       setJumlah(sampel.current.length);
@@ -160,8 +182,8 @@ export default function Register() {
         </span>
         <h1 className="mt-5 text-3xl font-extrabold tracking-tight text-ink">Telapak terdaftar</h1>
         <p className="mt-2 text-muted">
-          Tangan {form.sisi} milik <b className="text-ink">{tersimpan.nama}</b> tersimpan dengan {JUMLAH_SAMPEL}{" "}
-          sampel. Sekarang coba scan untuk memastikan sistem mengenalimu.
+          Tangan {form.sisi} milik <b className="text-ink">{tersimpan.nama}</b> tersimpan dengan{" "}
+          {JUMLAH_SAMPEL} sampel. Sekarang coba scan untuk memastikan sistem mengenalimu.
         </p>
         <Link to="/" className={`${tombol.utama} mt-7`}>
           Coba scan sekarang
@@ -178,7 +200,12 @@ export default function Register() {
           judul={`Tunjukkan telapak tangan ${form.sisi}`}
           keterangan={`Untuk ${nama}. Tahan tangan diam di depan kamera sampai ${JUMLAH_SAMPEL} sampel terkumpul.`}
         >
-          <button type="button" onClick={() => setTahap("form")} disabled={menyimpan} className={tombol.kedua}>
+          <button
+            type="button"
+            onClick={() => setTahap("form")}
+            disabled={menyimpan}
+            className={tombol.kedua}
+          >
             Batal
           </button>
         </JudulHalaman>
@@ -202,7 +229,9 @@ export default function Register() {
             }
           />
         </div>
-        {menyimpan && <ProcessingPanel judul="Menyimpan data…" keterangan="Tangan boleh diturunkan." />}
+        {menyimpan && (
+          <ProcessingPanel judul="Menyimpan data…" keterangan="Tangan boleh diturunkan." />
+        )}
         {galat && (
           <Pesan jenis="galat" className="flex flex-wrap items-center justify-between gap-3">
             <span>{galat}</span>
@@ -224,8 +253,8 @@ export default function Register() {
 
       {modelBelumAda && (
         <Pesan jenis="peringatan">
-          Model belum dibuat, jadi belum bisa mendaftar. Isi <code>backend/model.py</code> lalu jalankan ulang
-          backend.
+          Model belum dibuat, jadi belum bisa mendaftar. Isi <code>backend/model.py</code> lalu
+          jalankan ulang backend.
         </Pesan>
       )}
 
@@ -277,7 +306,11 @@ export default function Register() {
                 </label>
                 <label className="block space-y-2 text-sm">
                   <span className="font-semibold text-ink">Status</span>
-                  <select value={form.status} onChange={(e) => ubah("status", e.target.value)} className={input}>
+                  <select
+                    value={form.status}
+                    onChange={(e) => ubah("status", e.target.value)}
+                    className={input}
+                  >
                     {STATUS.map((s) => (
                       <option key={s} value={s}>
                         {s}
@@ -307,7 +340,8 @@ export default function Register() {
                 className="mt-0.5 h-4 w-4 accent-brand"
               />
               <span>
-                <b>Ganti data lama.</b> Tangan {form.sisi} orang ini sudah terdaftar dan datanya akan diganti.
+                <b>Ganti data lama.</b> Tangan {form.sisi} orang ini sudah terdaftar dan datanya
+                akan diganti.
               </span>
             </label>
           )}
@@ -319,12 +353,18 @@ export default function Register() {
               onChange={(e) => ubah("persetujuan", e.target.checked)}
               className="mt-0.5 h-4 w-4 accent-brand"
             />
-            <span>Saya setuju embedding telapak saya disimpan untuk keperluan demo. Foto tidak disimpan.</span>
+            <span>
+              Saya setuju embedding telapak saya disimpan untuk keperluan demo. Foto tidak disimpan.
+            </span>
           </label>
 
           {galat && <Pesan jenis="galat">{galat}</Pesan>}
 
-          <button type="submit" disabled={modelBelumAda} className={`${tombol.utama} w-full py-3.5 sm:w-auto`}>
+          <button
+            type="submit"
+            disabled={modelBelumAda}
+            className={`${tombol.utama} w-full py-3.5 sm:w-auto`}
+          >
             Nyalakan kamera dan mulai
           </button>
         </form>

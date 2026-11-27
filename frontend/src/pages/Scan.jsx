@@ -67,8 +67,8 @@ export default function Scan() {
 
       {pengaturan && !pengaturan.model_siap && (
         <Pesan jenis="peringatan">
-          Model belum dibuat. Scan tetap berjalan sampai tahap potong ROI, tetapi belum bisa mengenali orang. Isi{" "}
-          <code>backend/model.py</code> untuk memasang model.
+          Model belum dibuat. Scan tetap berjalan sampai tahap potong ROI, tetapi belum bisa
+          mengenali orang. Isi <code>backend/model.py</code> untuk memasang model.
         </Pesan>
       )}
 
@@ -77,7 +77,11 @@ export default function Scan() {
         <PalmCamera mode="sekali" onAmbil={onAmbil} aktif={!memproses} />
       </div>
       {memproses && (
-        <ProcessingPanel foto={foto} judul="Mencocokkan telapak…" keterangan="Foto sudah diambil. Tangan boleh diturunkan." />
+        <ProcessingPanel
+          foto={foto}
+          judul="Mencocokkan telapak…"
+          keterangan="Foto sudah diambil. Tangan boleh diturunkan."
+        />
       )}
       {galat && <Pesan jenis="galat">{galat}</Pesan>}
 

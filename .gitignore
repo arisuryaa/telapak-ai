@@ -2,21 +2,19 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.venv/
 backend/.env
 
-# Node / frontend build
+# Frontend
 node_modules/
 frontend/dist/
 frontend/public/mediapipe/
 
-# Local data and agent scratch files
-registered_data/
-backend/data_uji/
-backend/gambar_canny/
-backend/gambar_kode/
-.superpowers
-
-# Telapak AI: dataset, trained model, Python environment
+# Dataset and trained models (too big for git)
 data/
 model/
-.venv/
+
+# Local notes and tool folders
+reports/
+research_notes/
+.superpowers/

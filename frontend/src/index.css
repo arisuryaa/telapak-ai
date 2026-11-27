@@ -33,8 +33,7 @@ body {
 
 /* Faint tile grid behind the top of every page, echoing the reference backdrop. */
 .latar-grid {
-  background-image:
-    linear-gradient(to right, rgb(47 107 239 / 0.07) 1px, transparent 1px),
+  background-image: linear-gradient(to right, rgb(47 107 239 / 0.07) 1px, transparent 1px),
     linear-gradient(to bottom, rgb(47 107 239 / 0.07) 1px, transparent 1px);
   background-size: 56px 56px;
   mask-image: linear-gradient(to bottom, black 0%, transparent 70%);
@@ -47,8 +46,12 @@ body {
 
 /* Bingkai kamera berkedip saat satu sampel diterima. */
 @keyframes kilat {
-  0% { box-shadow: inset 0 0 0 6px rgb(47 107 239 / 0.95); }
-  100% { box-shadow: inset 0 0 0 0 rgb(47 107 239 / 0); }
+  0% {
+    box-shadow: inset 0 0 0 6px rgb(47 107 239 / 0.95);
+  }
+  100% {
+    box-shadow: inset 0 0 0 0 rgb(47 107 239 / 0);
+  }
 }
 .animasi-kilat {
   animation: kilat 600ms ease-out forwards;
