@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 import db
 import model
-from pencocokan import hitung_jarak
+from matching import hitung_jarak
 from pipeline import baca_foto, proses_foto
 from steps import susun_langkah
 

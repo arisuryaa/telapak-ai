@@ -79,7 +79,7 @@ export function kotakRoi(titik, lebar, tinggi) {
 }
 
 // Rata-rata pergeseran 21 titik dari frame sebelumnya.
-export function rataGerak(titikA, titikB) {
+function rataGerak(titikA, titikB) {
   if (!titikA || !titikB) return Infinity;
   let total = 0;
   for (let i = 0; i < titikA.length; i++) {
