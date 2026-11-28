@@ -115,16 +115,6 @@ cd frontend && npm test && npm run build
 ```
 
 Tes backend memakai SQLite di memori dan pengenal tiruan, jadi tidak membutuhkan MySQL maupun file model.
-
-## 10. Keterbatasan
-
-- Model hanya dilatih dengan foto Tongji (kamera industri, lampu tetap). Di webcam akurasinya lebih rendah (*domain shift*). Pengumpulan foto sendiri dengan `backend/tools/ambil_foto.py` untuk fine-tuning tambahan adalah langkah berikutnya.
-- Sekitar 20% foto Tongji tidak bisa dipotong (tangan tidak terdeteksi di foto gelap, atau kotak keluar dari foto).
-- Belum ada anti-pemalsuan. Ini prototipe pembelajaran, belum layak sebagai pengaman utama.
-
-## 11. Rujukan
-
-- Zhang, L., Li, L., Yang, A., Shen, Y., & Yang, M. (2017). Towards contactless palmprint recognition: A novel device, a new benchmark, and a collaborative representation based identification approach. *Pattern Recognition*, 69, 199–212. (dataset)
 - He, K., Zhang, X., Ren, S., & Sun, J. (2016). Deep residual learning for image recognition. *CVPR*. (ResNet)
 - Deng, J., Guo, J., Xue, N., & Zafeiriou, S. (2019). ArcFace: Additive angular margin loss for deep face recognition. *CVPR*. (ArcFace)
 
